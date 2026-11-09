@@ -1,7 +1,7 @@
 #!/bin/bash
 #
 # MDJ Music Downloader - Public Release Installation Script
-# Version: 1.0.0
+# Version: 1.0.1
 # This script installs MDJ Music Downloader for all users on the system
 #
 
@@ -9,7 +9,7 @@ set -e  # Exit on error
 
 echo "╔════════════════════════════════════════════════════════════╗"
 echo "║       MDJ Music Downloader - Installation Script          ║"
-echo "║                    Version 1.0.0                           ║"
+echo "║                    Version 1.0.1                           ║"
 echo "╚════════════════════════════════════════════════════════════╝"
 echo ""
 

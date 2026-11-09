@@ -1,4 +1,11 @@
-# MDJ Music Downloader v1.0.0 - Release Notes
+# MDJ Music Downloader v1.0.1 - Release Notes
+
+## 🆕 What's new in v1.0.1
+- "Support Development" button now opens the new Ko-fi page: https://ko-fi.com/mdj_musicdl
+
+**Install:** download `mdj-music-downloader_1.0.1_amd64.deb` below, then run `sudo apt install ./mdj-music-downloader_1.0.1_amd64.deb`
+
+---
 
 ## 🎉 Public Release - Stable Version
 
@@ -68,9 +75,9 @@ A user-friendly application for downloading music and videos from YouTube and 10
 ## 📦 Installation
 
 ### Quick Install (Recommended)
-Download `mdj-music-downloader_1.0.0_amd64.deb` from the Releases page, then:
+Download `mdj-music-downloader_1.0.1_amd64.deb` from the Releases page, then:
 ```bash
-sudo apt install ./mdj-music-downloader_1.0.0_amd64.deb
+sudo apt install ./mdj-music-downloader_1.0.1_amd64.deb
 ```
 
 ### From Source
@@ -185,6 +192,9 @@ This application is licensed under the MIT License.
 ---
 
 ## 📝 Changelog
+
+### v1.0.1 (2026-11-09)
+- ☕ "Support Development" now opens the new Ko-fi page: https://ko-fi.com/mdj_musicdl
 
 ### v1.0.0 (2026-11-09)
 - 🎉 Initial public release

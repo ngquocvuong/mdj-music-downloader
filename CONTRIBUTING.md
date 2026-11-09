@@ -44,7 +44,7 @@ python3 music_downloader_customtkinter.py  # Run from source
 ## Support
 
 - ⭐ Star the repository
-- ☕ [Buy me a coffee](https://ko-fi.com/musicdl)
+- ☕ [Buy me a coffee](https://ko-fi.com/mdj_musicdl)
 - 📢 Share with others
 
 Thank you! 🎵

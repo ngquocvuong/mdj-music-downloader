@@ -29,10 +29,10 @@ Unlike other downloaders, MDJ Music Downloader is specifically designed for musi
 ## 📥 Installation
 
 ### From Package (Recommended – Ubuntu/Debian/Linux Mint)
-1. Download `mdj-music-downloader_1.0.0_amd64.deb` from the [Releases](https://github.com/ngquocvuong/mdj-music-downloader/releases) page
+1. Download `mdj-music-downloader_1.0.1_amd64.deb` from the [Releases](https://github.com/ngquocvuong/mdj-music-downloader/releases) page
 2. Install it:
    ```bash
-   sudo apt install ./mdj-music-downloader_1.0.0_amd64.deb
+   sudo apt install ./mdj-music-downloader_1.0.1_amd64.deb
    ```
 3. Launch **MDJ Music Downloader** from your application menu
 
@@ -109,7 +109,7 @@ This project is licensed under the MIT License - see the [LICENSE](LICENSE) file
 
 If MDJ Music Downloader saves you time and you'd like to support its development:
 
-[![ko-fi](https://ko-fi.com/img/githubbutton_sm.svg)](https://ko-fi.com/musicdl)
+[![ko-fi](https://ko-fi.com/img/githubbutton_sm.svg)](https://ko-fi.com/mdj_musicdl)
 
 **Other ways to support:**
 - ⭐ Star this project on GitHub

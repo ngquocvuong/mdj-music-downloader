@@ -4,6 +4,11 @@ All notable changes to MDJ Music Downloader will be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
+## [1.0.1] - 2026-11-09
+
+### Changed
+- "Support Development" button and docs now link to the new Ko-fi page: https://ko-fi.com/mdj_musicdl
+
 ## [1.0.0] - 2026-11-01
 
 ### Added
@@ -39,4 +44,5 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 - New MDJ app icon (installed into the system icon theme)
 - Licensed under MIT License
 
+[1.0.1]: https://github.com/ngquocvuong/mdj-music-downloader/releases/tag/v1.0.1
 [1.0.0]: https://github.com/ngquocvuong/mdj-music-downloader/releases/tag/v1.0.0

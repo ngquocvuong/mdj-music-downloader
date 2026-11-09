@@ -48,7 +48,7 @@ if DEBUG:
         pass
 
 # App version
-APP_VERSION = "1.0.0"
+APP_VERSION = "1.0.1"
 
 ctk.set_appearance_mode("dark")
 ctk.set_default_color_theme("blue")
@@ -1742,7 +1742,7 @@ class MusicDownloader:
 
     def open_support_page(self):
         """Open Ko-fi support page in browser"""
-        ko_fi_url = "https://ko-fi.com/musicdl"
+        ko_fi_url = "https://ko-fi.com/mdj_musicdl"
         try:
             webbrowser.open(ko_fi_url)
             TooltipNotification(self.root, "Opening support page in browser...")
