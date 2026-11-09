@@ -16,7 +16,7 @@ A modern, easy-to-use desktop application for downloading audio and video from Y
 - 🖥️ **Multi-Monitor Support** - Proper window positioning
 - 👥 **Multi-User Ready** - Each user gets their own settings
 - 🎨 **Modern Interface** - Clean, professional CustomTkinter UI
-- 🔄 **Built-in yt-dlp Updater** - Update downloader without reinstalling
+- 🔄 **Built-in yt-dlp Updater** - Update downloader without reinstalling (for all users with an admin password, or just for yourself without one)
 
 ## 🎯 Why MDJ Music Downloader?
 
@@ -29,10 +29,10 @@ Unlike other downloaders, MDJ Music Downloader is specifically designed for musi
 ## 📥 Installation
 
 ### From Package (Recommended – Ubuntu/Debian/Linux Mint)
-1. Download `mdj-music-downloader_1.0.2_amd64.deb` from the [Releases](https://github.com/ngquocvuong/mdj-music-downloader/releases) page
+1. Download `mdj-music-downloader_1.0.3_amd64.deb` from the [Releases](https://github.com/ngquocvuong/mdj-music-downloader/releases) page
 2. Install it:
    ```bash
-   sudo apt install ./mdj-music-downloader_1.0.2_amd64.deb
+   sudo apt install ./mdj-music-downloader_1.0.3_amd64.deb
    ```
 3. Launch **MDJ Music Downloader** from your application menu
 

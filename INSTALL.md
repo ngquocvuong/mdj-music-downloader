@@ -2,8 +2,8 @@
 
 ## Easy Install (.deb package)
 
-1. Download `mdj-music-downloader_1.0.2_amd64.deb` from [Releases](https://github.com/ngquocvuong/mdj-music-downloader/releases)
-2. Install: `sudo apt install ./mdj-music-downloader_1.0.2_amd64.deb`
+1. Download `mdj-music-downloader_1.0.3_amd64.deb` from [Releases](https://github.com/ngquocvuong/mdj-music-downloader/releases)
+2. Install: `sudo apt install ./mdj-music-downloader_1.0.3_amd64.deb`
 3. Launch from the application menu, or run: `/opt/mdj-music-downloader/music_downloader`
 
 ## Run from Source

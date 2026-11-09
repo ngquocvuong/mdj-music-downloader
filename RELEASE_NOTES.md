@@ -1,13 +1,19 @@
-# MDJ Music Downloader v1.0.2 - Release Notes
+# MDJ Music Downloader v1.0.3 - Release Notes
 
-## 🆕 What's new in v1.0.2
+## 🆕 What's new in v1.0.3
+- **"Update yt-dlp" now works for every user on a shared computer.** Enter an administrator password to update it for all users, or cancel to update it just for your own account — no more "Permission denied".
+- The password is asked only once (was twice), and not at all when yt-dlp is already up to date.
+- Fixed: updating failed for a second user on the same computer.
+- Faster startup: the window no longer freezes for a few seconds while yt-dlp is checked.
+
+### v1.0.2
 - **Fixed:** downloads failed with "yt-dlp error! Please reinstall the application" on Ubuntu 22.04, Linux Mint 21 and other systems with Python older than 3.11. The app now ships yt-dlp's standalone build, which includes its own Python. **Please update if you installed v1.0.0 or v1.0.1.**
 - The "Update yt-dlp" button now downloads the standalone build and checks it works before installing.
 
 ### v1.0.1
 - "Support Development" button now opens the new Ko-fi page: https://ko-fi.com/mdj_musicdl
 
-**Install:** download `mdj-music-downloader_1.0.2_amd64.deb` below, then run `sudo apt install ./mdj-music-downloader_1.0.2_amd64.deb`
+**Install:** download `mdj-music-downloader_1.0.3_amd64.deb` below, then run `sudo apt install ./mdj-music-downloader_1.0.3_amd64.deb`
 
 ---
 
@@ -79,9 +85,9 @@ A user-friendly application for downloading music and videos from YouTube and 10
 ## 📦 Installation
 
 ### Quick Install (Recommended)
-Download `mdj-music-downloader_1.0.2_amd64.deb` from the Releases page, then:
+Download `mdj-music-downloader_1.0.3_amd64.deb` from the Releases page, then:
 ```bash
-sudo apt install ./mdj-music-downloader_1.0.2_amd64.deb
+sudo apt install ./mdj-music-downloader_1.0.3_amd64.deb
 ```
 
 ### From Source
@@ -112,7 +118,7 @@ sudo ./INSTALL.sh   # install binary, yt-dlp, icon and menu entry
 ### Update yt-dlp
 1. Click "Update yt-dlp" button
 2. Click "Update Now"
-3. Wait for completion
+3. Enter an administrator password to update it for **all users** — or cancel to update it **just for your account**
 4. Done!
 
 ---
@@ -133,7 +139,8 @@ sudo ./INSTALL.sh   # install binary, yt-dlp, icon and menu entry
 ## 📂 File Locations
 
 - **Application**: `/opt/mdj-music-downloader/music_downloader`
-- **yt-dlp**: `/opt/mdj-music-downloader/yt-dlp`
+- **yt-dlp**: `/opt/mdj-music-downloader/yt-dlp` (all users)
+- **yt-dlp updated without admin password**: `~/.local/share/mdj-music-downloader/yt-dlp` (that user only; the newer copy is used)
 - **User Config**: `~/.config/mdj-music-downloader/config.json`
 - **Default Downloads**: `~/Music/`
 - **Desktop Entry**: `/usr/share/applications/mdj-music-downloader.desktop`
@@ -196,6 +203,9 @@ This application is licensed under the MIT License.
 ---
 
 ## 📝 Changelog
+
+### v1.0.3 (2026-11-09)
+- 👥 "Update yt-dlp" works for standard users (per-user copy), one password prompt, faster startup
 
 ### v1.0.2 (2026-11-09)
 - 🐛 Fixed "yt-dlp error" on systems with Python older than 3.11 (standalone yt-dlp build)

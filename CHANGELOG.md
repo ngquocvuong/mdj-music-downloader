@@ -4,6 +4,17 @@ All notable changes to MDJ Music Downloader will be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
+## [1.0.3] - 2026-11-09
+
+### Added
+- "Update yt-dlp" works for every user on a shared computer: with an administrator password it updates yt-dlp for all users; without one (or if the password prompt is cancelled) it updates it just for that user, in `~/.local/share/mdj-music-downloader/`. The app always uses the newest working copy.
+- "Already up to date" check, so no password is asked for when there is nothing to update.
+
+### Fixed
+- Updating yt-dlp asked for the administrator password twice; now once.
+- Updating failed for a second user on the same computer (shared temporary file in /tmp).
+- The window froze for a few seconds at startup while yt-dlp was checked; the check now runs in the background.
+
 ## [1.0.2] - 2026-11-09
 
 ### Fixed
@@ -50,6 +61,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 - New MDJ app icon (installed into the system icon theme)
 - Licensed under MIT License
 
+[1.0.3]: https://github.com/ngquocvuong/mdj-music-downloader/releases/tag/v1.0.3
 [1.0.2]: https://github.com/ngquocvuong/mdj-music-downloader/releases/tag/v1.0.2
 [1.0.1]: https://github.com/ngquocvuong/mdj-music-downloader/releases/tag/v1.0.1
 [1.0.0]: https://github.com/ngquocvuong/mdj-music-downloader/releases/tag/v1.0.0

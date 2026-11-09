@@ -8,6 +8,8 @@ import sys
 import shutil
 import queue
 import webbrowser
+import re
+import tempfile
 from datetime import datetime
 
 # ═══════════════════════════════════════════════════════════════════
@@ -48,7 +50,42 @@ if DEBUG:
         pass
 
 # App version
-APP_VERSION = "1.0.2"
+APP_VERSION = "1.0.3"
+
+# Per-user yt-dlp copy, used when the user can't (or doesn't want to) update the
+# system-wide copy next to the app (e.g. a standard user on a shared computer).
+USER_DATA_DIR = os.path.join(
+    os.environ.get("XDG_DATA_HOME") or os.path.expanduser("~/.local/share"),
+    "mdj-music-downloader")
+USER_YTDLP_PATH = os.path.join(USER_DATA_DIR, "yt-dlp")
+YTDLP_DOWNLOAD_URL = "https://github.com/yt-dlp/yt-dlp/releases/latest/download/yt-dlp_linux"
+
+
+def parse_ytdlp_version(text):
+    """'2026.10.26' -> (2026, 10, 26); '2026.10.26.1' -> (2026, 10, 26, 1); None if unparseable."""
+    m = re.search(r"\d{4}\.\d{1,2}\.\d{1,2}(?:\.\d+)*", text or "")
+    return tuple(int(x) for x in m.group(0).split(".")) if m else None
+
+
+def get_ytdlp_version(path, timeout=30):
+    """Run `path --version`. Returns (version_tuple, version_string) or (None, None) if it doesn't run."""
+    try:
+        if not (os.path.isfile(path) and os.access(path, os.X_OK)):
+            return None, None
+        r = subprocess.run([path, "--version"], capture_output=True, text=True, timeout=timeout)
+        if r.returncode != 0:
+            return None, None
+        out = r.stdout.strip()
+        return parse_ytdlp_version(out), out
+    except Exception:
+        return None, None
+
+
+def system_ytdlp_path():
+    """yt-dlp shipped next to the app (/opt/mdj-music-downloader/yt-dlp), or None when running from source."""
+    if getattr(sys, "frozen", False):
+        return os.path.join(os.path.dirname(sys.executable), "yt-dlp")
+    return None
 
 ctk.set_appearance_mode("dark")
 ctk.set_default_color_theme("blue")
@@ -156,10 +193,6 @@ class MusicDownloader:
         self.setup_ui()
         debug("UI setup complete")
 
-        # Start checking queue and yt-dlp version
-        self.check_queue()
-        self.check_ytdlp_version()
-        debug("Queue and ytdlp checks done")
 
         # Window close handler
         self.root.protocol("WM_DELETE_WINDOW", self.on_closing)
@@ -819,66 +852,30 @@ class MusicDownloader:
         self.root.after(100, self.check_queue)
 
     def check_ytdlp_version(self):
-        """Check if yt-dlp is installed and working"""
-        try:
-            ytdlp_path = self.get_yt_dlp_path()
+        """Check in the background that yt-dlp is installed and working, then update the status line."""
+        def worker():
+            path, version = self._resolve_ytdlp()
+            self._ytdlp_cache = (path, version)
+            exists = os.path.exists(path) or shutil.which(path)
+            self.root.after(0, lambda: self._show_ytdlp_status(path, version, exists))
+        threading.Thread(target=worker, daemon=True).start()
 
-            if not shutil.which(ytdlp_path) and not os.path.exists(ytdlp_path):
-                # Show different message based on whether app is bundled (frozen)
-                if getattr(sys, 'frozen', False):
-                    self.status_label.configure(
-                        text="⚠ yt-dlp missing! Please reinstall the application",
-                        text_color="#ff9800"
-                    )
-                else:
-                    self.status_label.configure(
-                        text="⚠ yt-dlp not found! Install with: pip3 install -U yt-dlp",
-                        text_color="#ff9800"
-                    )
-                return
-
-            # Test if yt-dlp actually works (not just exists)
-            result = subprocess.run(
-                [ytdlp_path, "--version"],
-                capture_output=True,
-                text=True,
-                timeout=5
-            )
-
-            if result.returncode == 0:
-                # yt-dlp is working fine
-                self.status_label.configure(
-                    text=f"v{APP_VERSION}",
-                    text_color=("#666666", "#888888")
-                )
-                debug(f"yt-dlp version check OK: {result.stdout.strip()}")
-            else:
-                # yt-dlp exists but failed to run
-                debug(f"yt-dlp failed! returncode={result.returncode}", level="ERROR")
-                debug(f"stdout: {result.stdout}", level="ERROR")
-                debug(f"stderr: {result.stderr}", level="ERROR")
-
-                if getattr(sys, 'frozen', False):
-                    self.status_label.configure(
-                        text="⚠ yt-dlp error! Please reinstall the application",
-                        text_color="#ff9800"
-                    )
-                else:
-                    self.status_label.configure(
-                        text="⚠ yt-dlp error! Try: pip3 install -U --force-reinstall yt-dlp",
-                        text_color="#ff9800"
-                    )
-        except subprocess.TimeoutExpired:
+    def _show_ytdlp_status(self, path, version, exists):
+        frozen = getattr(sys, 'frozen', False)
+        if version:
+            debug(f"yt-dlp version check OK: {version} ({path})")
+            self.status_label.configure(text=f"v{APP_VERSION}", text_color=("#666666", "#888888"))
+        elif not exists:
             self.status_label.configure(
-                text="⚠ yt-dlp timeout! The file may be corrupted",
-                text_color="#ff9800"
-            )
-        except Exception:
-            # Unknown error - just show version, don't alarm the user
+                text=("⚠ yt-dlp missing! Click 'Update yt-dlp' or reinstall the application" if frozen
+                      else "⚠ yt-dlp not found! Install with: pip3 install -U yt-dlp"),
+                text_color="#ff9800")
+        else:
+            debug(f"yt-dlp at {path} does not run", level="ERROR")
             self.status_label.configure(
-                text=f"v{APP_VERSION}",
-                text_color=("#666666", "#888888")
-            )
+                text=("⚠ yt-dlp error! Click 'Update yt-dlp' to repair it" if frozen
+                      else "⚠ yt-dlp error! Try: pip3 install -U --force-reinstall yt-dlp"),
+                text_color="#ff9800")
 
     def paste_from_clipboard(self):
         try:
@@ -1505,26 +1502,52 @@ class MusicDownloader:
         no_btn.pack(side="left", expand=True, fill="x")
 
     def get_yt_dlp_path(self):
-        """Auto-detect yt-dlp location"""
-        if getattr(sys, 'frozen', False):
-            bundled = os.path.join(os.path.dirname(sys.executable), "yt-dlp")
-            if os.path.exists(bundled):
-                return bundled
+        """Path of the yt-dlp to use (cached; call invalidate_ytdlp_cache() after an update)."""
+        cache = getattr(self, "_ytdlp_cache", None)
+        if cache is None:
+            lock = self.__dict__.setdefault("_ytdlp_lock", threading.Lock())
+            with lock:
+                cache = getattr(self, "_ytdlp_cache", None)
+                if cache is None:
+                    cache = self._resolve_ytdlp()
+                    self._ytdlp_cache = cache
+        return cache[0]
 
-        ytdlp_path = shutil.which("yt-dlp")
-        if ytdlp_path:
-            return ytdlp_path
+    def invalidate_ytdlp_cache(self):
+        self._ytdlp_cache = None
 
-        common_paths = [
-            os.path.expanduser("~/.local/bin/yt-dlp"),
-            "/usr/local/bin/yt-dlp",
-            "/usr/bin/yt-dlp"
-        ]
-        for path in common_paths:
+    def _resolve_ytdlp(self):
+        """Pick the newest *working* yt-dlp among the user's own copy and the system copy.
+
+        Returns (path, version_string_or_None)."""
+        candidates = [USER_YTDLP_PATH]
+        sys_path = system_ytdlp_path()
+        if sys_path:
+            candidates.append(sys_path)
+        else:
+            # Running from source: also consider yt-dlp on PATH / common locations
+            found = shutil.which("yt-dlp")
+            for path in ([found] if found else []) + [
+                    os.path.expanduser("~/.local/bin/yt-dlp"), "/usr/local/bin/yt-dlp", "/usr/bin/yt-dlp"]:
+                if path and os.path.exists(path):
+                    candidates.append(path)
+                    break
+
+        best = None  # (version_tuple, path, version_string)
+        for path in candidates:
+            vt, vs = get_ytdlp_version(path)
+            debug(f"yt-dlp candidate {path}: {vs}")
+            if vt is not None and (best is None or vt > best[0]):
+                best = (vt, path, vs)
+        if best:
+            debug(f"Using yt-dlp {best[2]} at {best[1]}")
+            return best[1], best[2]
+
+        # Nothing runs: return the first candidate that exists so callers can report the error
+        for path in candidates:
             if os.path.exists(path):
-                return path
-
-        return "yt-dlp"
+                return path, None
+        return (sys_path or "yt-dlp"), None
 
     def get_album_folder(self, base_dir, album_name):
         """Get album folder path (case-insensitive)"""
@@ -1965,7 +1988,7 @@ class MusicDownloader:
         # Create update dialog
         update_window = ctk.CTkToplevel(self.root)
         update_window.title("Update yt-dlp")
-        self.center_dialog(update_window, 450, 300)
+        self.center_dialog(update_window, 500, 360)
         update_window.attributes('-topmost', True)
 
         frame = ctk.CTkFrame(update_window, corner_radius=15)
@@ -1980,7 +2003,9 @@ class MusicDownloader:
 
         info_label = ctk.CTkLabel(
             frame,
-            text="This will download the latest version of yt-dlp\nand install it to /opt/mdj-music-downloader/",
+            text=("Downloads the latest yt-dlp.\n"
+                  "With an administrator password it is updated for all users;\n"
+                  "otherwise it is updated just for your account."),
             font=ctk.CTkFont(size=12),
             wraplength=400
         )
@@ -2006,86 +2031,101 @@ class MusicDownloader:
             cancel_btn.configure(text="Close", state="disabled")
 
             def update_thread():
+                ui = lambda fn: self.root.after(0, fn)
+                status = lambda text, color=None: ui(lambda: status_label.configure(
+                    text=text, **({"text_color": color} if color else {})))
+                finish = lambda: ui(lambda: cancel_btn.configure(text="Close", state="normal"))
+                tmp_dir = None
                 try:
-                    self.root.after(0, lambda: status_label.configure(text="Downloading latest yt-dlp..."))
-                    self.root.after(0, lambda: progress.set(0.3))
+                    status("Downloading latest yt-dlp...")
+                    ui(lambda: progress.set(0.3))
 
-                    # Download to temp location
-                    temp_path = "/tmp/yt-dlp-latest"
+                    # Download into a private temp folder owned by this user. (A fixed name like
+                    # /tmp/yt-dlp-latest breaks on shared computers: another user's file can't be overwritten.)
+                    cache_root = os.path.join(
+                        os.environ.get("XDG_CACHE_HOME") or os.path.expanduser("~/.cache"), "mdj-music-downloader")
+                    os.makedirs(cache_root, exist_ok=True)
+                    tmp_dir = tempfile.mkdtemp(prefix="update-", dir=cache_root)
+                    temp_path = os.path.join(tmp_dir, "yt-dlp")
                     result = subprocess.run(
                         # yt-dlp_linux = standalone build with its own Python (the plain "yt-dlp"
                         # zipapp needs the system Python to be 3.11+, which Ubuntu 22.04/Mint 21 lack)
-                        ["curl", "-fL", "https://github.com/yt-dlp/yt-dlp/releases/latest/download/yt-dlp_linux", "-o", temp_path],
-                        capture_output=True,
-                        text=True,
-                        timeout=300
-                    )
-
+                        ["curl", "-fsSL", "--retry", "2", YTDLP_DOWNLOAD_URL, "-o", temp_path],
+                        capture_output=True, text=True, timeout=600)
                     if result.returncode != 0:
-                        self.root.after(0, lambda: status_label.configure(text="✖ Download failed! Check your internet connection.", text_color="red"))
-                        self.root.after(0, lambda: cancel_btn.configure(state="normal"))
-                        return
+                        debug(f"yt-dlp download failed: {result.stderr}", level="ERROR")
+                        status("✖ Download failed! Check your internet connection.", "red")
+                        return finish()
 
-                    self.root.after(0, lambda: progress.set(0.6))
-                    self.root.after(0, lambda: status_label.configure(text="Installing yt-dlp..."))
+                    ui(lambda: progress.set(0.6))
+                    status("Checking downloaded yt-dlp...")
+                    os.chmod(temp_path, 0o755)
+                    new_vt, new_vs = get_ytdlp_version(temp_path, timeout=60)
+                    if new_vt is None:
+                        status("✖ Downloaded yt-dlp does not run. Please try again later.", "red")
+                        return finish()
 
-                    # Make executable
-                    subprocess.run(["chmod", "+x", temp_path], check=True)
+                    # Nothing to do if the copy in use is already this version or newer
+                    cur_path, cur_vs = self._resolve_ytdlp()
+                    cur_vt = parse_ytdlp_version(cur_vs)
+                    if cur_vt is not None and cur_vt >= new_vt:
+                        ui(lambda: progress.set(1.0))
+                        status(f"✓ yt-dlp is already up to date ({cur_vs}).", "green")
+                        return finish()
 
-                    # Make sure the downloaded file actually runs before installing it
-                    check = subprocess.run([temp_path, "--version"], capture_output=True, text=True, timeout=60)
-                    if check.returncode != 0:
-                        self.root.after(0, lambda: status_label.configure(text="✖ Downloaded yt-dlp does not run. Please try again later.", text_color="red"))
-                        self.root.after(0, lambda: cancel_btn.configure(state="normal"))
-                        return
+                    status("Installing yt-dlp...")
+                    scope = None
 
-                    # Try to install to /opt/mdj-music-downloader/ with pkexec (GUI-friendly) or sudo
-                    install_success = False
+                    # 1) System-wide copy next to the app (all users): needs admin rights
+                    sys_path = system_ytdlp_path()
+                    if sys_path and os.path.isdir(os.path.dirname(sys_path)):
+                        if os.access(os.path.dirname(sys_path), os.W_OK):
+                            shutil.copyfile(temp_path, sys_path + ".new")
+                            os.chmod(sys_path + ".new", 0o755)
+                            os.replace(sys_path + ".new", sys_path)
+                            scope = "all"
+                        elif shutil.which("pkexec"):
+                            status("Installing yt-dlp...\nEnter an administrator password to update it for all users,\nor cancel to update it just for your account.")
+                            # One command = one password prompt
+                            r = subprocess.run(["pkexec", "install", "-m", "755", temp_path, sys_path],
+                                               capture_output=True, text=True)
+                            debug(f"pkexec install returned {r.returncode}: {r.stderr.strip()}")
+                            if r.returncode == 0:
+                                scope = "all"
 
-                    # Try pkexec first (GUI password prompt)
-                    if shutil.which("pkexec"):
-                        result = subprocess.run(
-                            ["pkexec", "cp", temp_path, "/opt/mdj-music-downloader/yt-dlp"],
-                            capture_output=True,
-                            text=True
-                        )
-                        if result.returncode == 0:
-                            subprocess.run(["pkexec", "chmod", "755", "/opt/mdj-music-downloader/yt-dlp"], check=True)
-                            install_success = True
+                    # 2) Fallback: this user's own copy (no password needed)
+                    if scope is None:
+                        os.makedirs(USER_DATA_DIR, exist_ok=True)
+                        shutil.copyfile(temp_path, USER_YTDLP_PATH + ".new")
+                        os.chmod(USER_YTDLP_PATH + ".new", 0o755)
+                        os.replace(USER_YTDLP_PATH + ".new", USER_YTDLP_PATH)
+                        scope = "user"
+                    elif os.path.exists(USER_YTDLP_PATH):
+                        # System copy is now newest; drop this user's older private copy
+                        try:
+                            os.remove(USER_YTDLP_PATH)
+                        except OSError:
+                            pass
 
-                    # Fallback to sudo if pkexec failed or not available
-                    if not install_success:
-                        result = subprocess.run(
-                            ["sudo", "-n", "cp", temp_path, "/opt/mdj-music-downloader/yt-dlp"],
-                            capture_output=True,
-                            text=True
-                        )
-                        if result.returncode == 0:
-                            subprocess.run(["sudo", "-n", "chmod", "755", "/opt/mdj-music-downloader/yt-dlp"], check=True)
-                            install_success = True
-
-                    if not install_success:
-                        self.root.after(0, lambda: status_label.configure(
-                            text="✖ Installation failed! Permission denied.\n\nRun this in terminal:\nsudo cp /tmp/yt-dlp-latest /opt/mdj-music-downloader/yt-dlp\nsudo chmod 755 /opt/mdj-music-downloader/yt-dlp",
-                            text_color="red"
-                        ))
-                        self.root.after(0, lambda: cancel_btn.configure(state="normal"))
-                        return
-
-                    self.root.after(0, lambda: progress.set(1.0))
-                    self.root.after(0, lambda: status_label.configure(text="✓ yt-dlp updated successfully!", text_color="green"))
-
-                    # Refresh yt-dlp version check
-                    self.root.after(1000, self.check_ytdlp_version)
-
-                    self.root.after(0, lambda: cancel_btn.configure(text="Close", state="normal"))
+                    self.invalidate_ytdlp_cache()
+                    ui(lambda: progress.set(1.0))
+                    if scope == "all":
+                        status(f"✓ yt-dlp updated to {new_vs} for all users!", "green")
+                    else:
+                        status(f"✓ yt-dlp updated to {new_vs} for your account.", "green")
+                    self.root.after(500, self.check_ytdlp_version)
+                    finish()
 
                 except subprocess.TimeoutExpired:
-                    self.root.after(0, lambda: status_label.configure(text="✖ Download timeout! Check your internet connection.", text_color="red"))
-                    self.root.after(0, lambda: cancel_btn.configure(state="normal"))
+                    status("✖ Download timeout! Check your internet connection.", "red")
+                    finish()
                 except Exception as e:
-                    self.root.after(0, lambda: status_label.configure(text=f"✖ Error: {str(e)}", text_color="red"))
-                    self.root.after(0, lambda: cancel_btn.configure(state="normal"))
+                    debug(f"yt-dlp update error: {e}", level="ERROR")
+                    status(f"✖ Error: {e}", "red")
+                    finish()
+                finally:
+                    if tmp_dir:
+                        shutil.rmtree(tmp_dir, ignore_errors=True)
 
             threading.Thread(target=update_thread, daemon=True).start()
 

@@ -3,7 +3,7 @@
 set -e
 cd "$(dirname "$0")"
 
-VERSION="1.0.2"
+VERSION="1.0.3"
 PACKAGE_NAME="mdj-music-downloader"
 PKG="debian/${PACKAGE_NAME}"
 OUT="${PACKAGE_NAME}_${VERSION}_amd64.deb"
