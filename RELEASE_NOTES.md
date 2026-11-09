@@ -119,7 +119,7 @@ sudo ./INSTALL.sh   # install binary, yt-dlp, icon and menu entry
 
 ## 🔧 System Requirements
 
-- **OS**: Linux (tested on Ubuntu/Debian-based systems)
+- **OS**: 64-bit Linux – Ubuntu 22.04+, Linux Mint 21+, Debian 12+ (tested on Linux Mint 21.3)
 - **Python**: Not required (bundled in binary)
 - **ffmpeg**: Required for MP3 conversion (installed automatically with the .deb)
 - **Internet**: Required for downloads

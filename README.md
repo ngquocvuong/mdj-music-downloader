@@ -42,7 +42,7 @@ Uninstall: `sudo apt remove mdj-music-downloader`
 See [INSTALL.md](INSTALL.md).
 
 ### Requirements
-- 64-bit Linux (Ubuntu 20.04+, Debian 11+, Linux Mint 20+, or equivalent)
+- 64-bit Linux (Ubuntu 22.04+, Linux Mint 21+, Debian 12+, Pop!_OS 22.04+, or equivalent – glibc 2.35 or newer)
 - ffmpeg (installed automatically by the .deb package)
 - Python and yt-dlp are bundled – nothing else to install
 
