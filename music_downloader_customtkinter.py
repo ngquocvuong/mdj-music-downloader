@@ -816,10 +816,8 @@ class MusicDownloader:
                         text="✓ Download complete!",
                         text_color="#4caf50"
                     ))
-                    self.root.after(150, lambda d=msg_data: self.status_label.configure(
-                        text=f"Saved to: {d}",
-                        text_color="#4caf50"
-                    ))
+                    self.status_label.configure(text=f"Saved to: {msg_data}", text_color="#4caf50")
+                    self._keep_status = True  # don't let the following "reset" clear it
                 elif msg_type == "error":
                     self.progress_bar.stop()
                     self.root.after(50, lambda: self.progress_label.configure(
@@ -830,17 +828,18 @@ class MusicDownloader:
                     update_hint = ""
                     if any(word in error_lower for word in ["403", "forbidden", "old", "update", "version"]):
                         update_hint = " → Try updating: pip3 install -U yt-dlp"
-                    self.root.after(100, lambda d=msg_data, h=update_hint: self.status_label.configure(
-                        text=f"Error: {d}{h}",
-                        text_color="#f44336"
-                    ))
+                    self.status_label.configure(text=f"Error: {msg_data}{update_hint}", text_color="#f44336")
+                    self._keep_status = True
                 elif msg_type == "reset":
-                    self.reset_ui()
+                    self.reset_ui(keep_status=getattr(self, "_keep_status", False))
+                    self._keep_status = False
                 elif msg_type == "queue_success":
+                    self._run_done = getattr(self, "_run_done", 0) + 1
                     self.update_queue_item_status(msg_data, 'done')
                     self.current_download_index += 1
                     self.root.after(200, self.process_next_queue_item)
                 elif msg_type == "queue_failed":
+                    self._run_failed = getattr(self, "_run_failed", 0) + 1
                     self.update_queue_item_status(msg_data, 'failed')
                     self.current_download_index += 1
                     self.root.after(200, self.process_next_queue_item)
@@ -1354,6 +1353,8 @@ class MusicDownloader:
         self.progress_frame.pack(fill="x", padx=20, pady=(10, 0))
 
         self.current_download_index = 0
+        self._queue_saved_dirs = []
+        self._run_done = self._run_failed = 0  # counts for this run only
         self.process_next_queue_item()
 
     def process_next_queue_item(self):
@@ -1418,8 +1419,9 @@ class MusicDownloader:
         self.downloading = False
         self.current_download_index = -1
 
-        done_count = sum(1 for item in self.download_queue if item['status'] == 'done')
-        failed_count = sum(1 for item in self.download_queue if item['status'] == 'failed')
+        # Count only what happened in this run (items finished in an earlier run stay "done" in the list)
+        done_count = getattr(self, "_run_done", 0)
+        failed_count = getattr(self, "_run_failed", 0)
 
         # Create playlist if downloading to an album folder
         album_name = self.album_entry.get().strip()
@@ -1427,10 +1429,17 @@ class MusicDownloader:
             album_folder = self.get_album_folder(self.output_dir, album_name)
             self.create_playlist_for_album(album_folder, album_name)
 
+        # Where the files went (same folder for the whole queue, incl. the Album/Folder subfolder)
+        saved_dirs = list(getattr(self, "_queue_saved_dirs", []))  # folders used in this run
+
+        summary = f"Queue complete: {done_count} downloaded, {failed_count} failed"
+        if saved_dirs:
+            summary += f"\nSaved to: {saved_dirs[0]}" + (f" (+{len(saved_dirs) - 1} more)" if len(saved_dirs) > 1 else "")
         self.status_label.configure(
-            text=f"Queue complete: {done_count} downloaded, {failed_count} failed",
+            text=summary,
             text_color="#4caf50" if failed_count == 0 else "#ff9800"
         )
+        self._keep_status = True  # don't let the following "reset" clear it
 
         self.message_queue.put(("reset", None))
 
@@ -1720,6 +1729,8 @@ class MusicDownloader:
                         debug(f"Warning: Could not apply track numbering: {e}", level="WARN")
 
                 if queue_index >= 0:
+                    if download_dir not in self._queue_saved_dirs:
+                        self._queue_saved_dirs.append(download_dir)
                     self.message_queue.put(("queue_success", queue_index))
                 else:
                     self.message_queue.put(("success", download_dir))
@@ -1735,8 +1746,8 @@ class MusicDownloader:
                 self.downloading = False
                 self.message_queue.put(("reset", None))
 
-    def reset_ui(self):
-        """Reset UI after download completes/cancels"""
+    def reset_ui(self, keep_status=False):
+        """Reset UI after download completes/cancels (keep_status: leave the final result message visible)"""
         self.downloading = False
         self.current_download_index = -1  # Reset queue index
         self.cancel_button.pack_forget()
@@ -1761,7 +1772,8 @@ class MusicDownloader:
         self.save_queue_btn.configure(state="normal")
         self.load_queue_btn.configure(state="normal")
         self.progress_frame.pack_forget()
-        self.status_label.configure(text="")  # Clear old status messages
+        if not keep_status:
+            self.status_label.configure(text="")  # Clear old status messages
 
     def open_support_page(self):
         """Open Ko-fi support page in browser"""
