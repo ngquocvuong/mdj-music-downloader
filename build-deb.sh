@@ -50,7 +50,7 @@ Architecture: amd64
 Depends: ffmpeg
 Installed-Size: ${INSTALLED_SIZE}
 Maintainer: MDJ Digital LLC <blackhawk_7585@icloud.com>
-Homepage: https://github.com/YOUR_GITHUB_USERNAME/mdj-music-downloader
+Homepage: https://github.com/ngquocvuong/mdj-music-downloader
 Description: Modern music and video downloader for Linux
  Download audio and video from YouTube and 1000+ sites.
  Features queue management, playlists, and smart organization.

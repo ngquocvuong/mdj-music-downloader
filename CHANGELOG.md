@@ -39,4 +39,4 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 - New MDJ app icon (installed into the system icon theme)
 - Licensed under MIT License
 
-[1.0.0]: https://github.com/YOUR_GITHUB_USERNAME/mdj-music-downloader/releases/tag/v1.0.0
+[1.0.0]: https://github.com/ngquocvuong/mdj-music-downloader/releases/tag/v1.0.0
