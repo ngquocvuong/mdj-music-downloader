@@ -48,7 +48,7 @@ if DEBUG:
         pass
 
 # App version
-APP_VERSION = "1.0.1"
+APP_VERSION = "1.0.2"
 
 ctk.set_appearance_mode("dark")
 ctk.set_default_color_theme("blue")
@@ -2013,10 +2013,12 @@ class MusicDownloader:
                     # Download to temp location
                     temp_path = "/tmp/yt-dlp-latest"
                     result = subprocess.run(
-                        ["curl", "-L", "https://github.com/yt-dlp/yt-dlp/releases/latest/download/yt-dlp", "-o", temp_path],
+                        # yt-dlp_linux = standalone build with its own Python (the plain "yt-dlp"
+                        # zipapp needs the system Python to be 3.11+, which Ubuntu 22.04/Mint 21 lack)
+                        ["curl", "-fL", "https://github.com/yt-dlp/yt-dlp/releases/latest/download/yt-dlp_linux", "-o", temp_path],
                         capture_output=True,
                         text=True,
-                        timeout=60
+                        timeout=300
                     )
 
                     if result.returncode != 0:
@@ -2029,6 +2031,13 @@ class MusicDownloader:
 
                     # Make executable
                     subprocess.run(["chmod", "+x", temp_path], check=True)
+
+                    # Make sure the downloaded file actually runs before installing it
+                    check = subprocess.run([temp_path, "--version"], capture_output=True, text=True, timeout=60)
+                    if check.returncode != 0:
+                        self.root.after(0, lambda: status_label.configure(text="✖ Downloaded yt-dlp does not run. Please try again later.", text_color="red"))
+                        self.root.after(0, lambda: cancel_btn.configure(state="normal"))
+                        return
 
                     # Try to install to /opt/mdj-music-downloader/ with pkexec (GUI-friendly) or sudo
                     install_success = False

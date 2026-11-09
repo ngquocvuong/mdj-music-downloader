@@ -1,9 +1,13 @@
-# MDJ Music Downloader v1.0.1 - Release Notes
+# MDJ Music Downloader v1.0.2 - Release Notes
 
-## 🆕 What's new in v1.0.1
+## 🆕 What's new in v1.0.2
+- **Fixed:** downloads failed with "yt-dlp error! Please reinstall the application" on Ubuntu 22.04, Linux Mint 21 and other systems with Python older than 3.11. The app now ships yt-dlp's standalone build, which includes its own Python. **Please update if you installed v1.0.0 or v1.0.1.**
+- The "Update yt-dlp" button now downloads the standalone build and checks it works before installing.
+
+### v1.0.1
 - "Support Development" button now opens the new Ko-fi page: https://ko-fi.com/mdj_musicdl
 
-**Install:** download `mdj-music-downloader_1.0.1_amd64.deb` below, then run `sudo apt install ./mdj-music-downloader_1.0.1_amd64.deb`
+**Install:** download `mdj-music-downloader_1.0.2_amd64.deb` below, then run `sudo apt install ./mdj-music-downloader_1.0.2_amd64.deb`
 
 ---
 
@@ -75,9 +79,9 @@ A user-friendly application for downloading music and videos from YouTube and 10
 ## 📦 Installation
 
 ### Quick Install (Recommended)
-Download `mdj-music-downloader_1.0.1_amd64.deb` from the Releases page, then:
+Download `mdj-music-downloader_1.0.2_amd64.deb` from the Releases page, then:
 ```bash
-sudo apt install ./mdj-music-downloader_1.0.1_amd64.deb
+sudo apt install ./mdj-music-downloader_1.0.2_amd64.deb
 ```
 
 ### From Source
@@ -140,7 +144,7 @@ sudo ./INSTALL.sh   # install binary, yt-dlp, icon and menu entry
 
 ### yt-dlp not found error
 - Click "Update yt-dlp" in the app, OR
-- Run: `sudo curl -L https://github.com/yt-dlp/yt-dlp/releases/latest/download/yt-dlp -o /opt/mdj-music-downloader/yt-dlp && sudo chmod 755 /opt/mdj-music-downloader/yt-dlp`
+- Run: `sudo curl -L https://github.com/yt-dlp/yt-dlp/releases/latest/download/yt-dlp_linux -o /opt/mdj-music-downloader/yt-dlp && sudo chmod 755 /opt/mdj-music-downloader/yt-dlp`
 
 ### Permission denied error
 - Check output folder permissions
@@ -192,6 +196,9 @@ This application is licensed under the MIT License.
 ---
 
 ## 📝 Changelog
+
+### v1.0.2 (2026-11-09)
+- 🐛 Fixed "yt-dlp error" on systems with Python older than 3.11 (standalone yt-dlp build)
 
 ### v1.0.1 (2026-11-09)
 - ☕ "Support Development" now opens the new Ko-fi page: https://ko-fi.com/mdj_musicdl

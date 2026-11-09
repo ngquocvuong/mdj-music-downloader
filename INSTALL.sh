@@ -1,7 +1,7 @@
 #!/bin/bash
 #
 # MDJ Music Downloader - Public Release Installation Script
-# Version: 1.0.1
+# Version: 1.0.2
 # This script installs MDJ Music Downloader for all users on the system
 #
 
@@ -9,7 +9,7 @@ set -e  # Exit on error
 
 echo "╔════════════════════════════════════════════════════════════╗"
 echo "║       MDJ Music Downloader - Installation Script          ║"
-echo "║                    Version 1.0.1                           ║"
+echo "║                    Version 1.0.2                           ║"
 echo "╚════════════════════════════════════════════════════════════╝"
 echo ""
 
@@ -62,20 +62,14 @@ fi
 
 # Step 4: Install yt-dlp (if not present or outdated)
 echo "[4/6] Installing yt-dlp..."
-if [ -f "$INSTALL_DIR/yt-dlp" ]; then
-    YTDLP_SIZE=$(stat -c%s "$INSTALL_DIR/yt-dlp")
-    if [ "$YTDLP_SIZE" -gt 1000000 ]; then
-        echo "   ✅ yt-dlp already installed ($(du -h "$INSTALL_DIR/yt-dlp" | cut -f1))"
-        echo "      Use the 'Update yt-dlp' button in the app to update it"
-    else
-        echo "   ⚠️  Found outdated yt-dlp wrapper, replacing with standalone binary..."
-        curl -L https://github.com/yt-dlp/yt-dlp/releases/latest/download/yt-dlp -o "$INSTALL_DIR/yt-dlp"
-        chmod 755 "$INSTALL_DIR/yt-dlp"
-        echo "   ✅ yt-dlp installed ($(du -h "$INSTALL_DIR/yt-dlp" | cut -f1))"
-    fi
+# Use the standalone build (yt-dlp_linux): it bundles its own Python, so it works
+# on systems whose Python is older than yt-dlp requires (e.g. Ubuntu 22.04 / Mint 21).
+if [ -x "$INSTALL_DIR/yt-dlp" ] && "$INSTALL_DIR/yt-dlp" --version > /dev/null 2>&1; then
+    echo "   ✅ yt-dlp already installed and working ($("$INSTALL_DIR/yt-dlp" --version))"
+    echo "      Use the 'Update yt-dlp' button in the app to update it"
 else
-    echo "   Downloading latest yt-dlp..."
-    curl -L https://github.com/yt-dlp/yt-dlp/releases/latest/download/yt-dlp -o "$INSTALL_DIR/yt-dlp"
+    echo "   Downloading latest yt-dlp (standalone build)..."
+    curl -fL https://github.com/yt-dlp/yt-dlp/releases/latest/download/yt-dlp_linux -o "$INSTALL_DIR/yt-dlp"
     chmod 755 "$INSTALL_DIR/yt-dlp"
     echo "   ✅ yt-dlp installed ($(du -h "$INSTALL_DIR/yt-dlp" | cut -f1))"
 fi
@@ -152,7 +146,7 @@ if [ $ERRORS -eq 0 ]; then
     echo ""
     echo "🔄 To update yt-dlp:"
     echo "   • Open the app and click the 'Update yt-dlp' button"
-    echo "   • Or run: sudo curl -L https://github.com/yt-dlp/yt-dlp/releases/latest/download/yt-dlp -o $INSTALL_DIR/yt-dlp && sudo chmod 755 $INSTALL_DIR/yt-dlp"
+    echo "   • Or run: sudo curl -L https://github.com/yt-dlp/yt-dlp/releases/latest/download/yt-dlp_linux -o $INSTALL_DIR/yt-dlp && sudo chmod 755 $INSTALL_DIR/yt-dlp"
     echo ""
     echo "✨ Features:"
     echo "   ✓ User-friendly error messages"

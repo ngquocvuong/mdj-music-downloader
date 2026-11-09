@@ -3,7 +3,7 @@
 set -e
 cd "$(dirname "$0")"
 
-VERSION="1.0.1"
+VERSION="1.0.2"
 PACKAGE_NAME="mdj-music-downloader"
 PKG="debian/${PACKAGE_NAME}"
 OUT="${PACKAGE_NAME}_${VERSION}_amd64.deb"
@@ -21,10 +21,14 @@ mkdir -p "$PKG/DEBIAN" "$PKG/opt/mdj-music-downloader" "$PKG/usr/share/applicati
 install -m 755 dist/music_downloader "$PKG/opt/mdj-music-downloader/music_downloader"
 
 # yt-dlp (download engine, kept next to the app so the in-app updater can replace it)
-if [ ! -f yt-dlp ]; then
-    echo "Downloading latest yt-dlp..."
-    curl -fL https://github.com/yt-dlp/yt-dlp/releases/latest/download/yt-dlp -o yt-dlp
+# Must be the standalone build (yt-dlp_linux, an ELF binary with its own Python).
+# The plain "yt-dlp" zipapp needs system Python 3.11+ and breaks on Ubuntu 22.04 / Mint 21.
+if [ ! -f yt-dlp ] || [ "$(head -c 4 yt-dlp | tail -c 3)" != "ELF" ]; then
+    echo "Downloading latest yt-dlp (standalone build)..."
+    curl -fL https://github.com/yt-dlp/yt-dlp/releases/latest/download/yt-dlp_linux -o yt-dlp
+    chmod 755 yt-dlp
 fi
+./yt-dlp --version > /dev/null || { echo "Error: yt-dlp does not run" >&2; exit 1; }
 install -m 755 yt-dlp "$PKG/opt/mdj-music-downloader/yt-dlp"
 
 # Icons (installed into the system icon theme)
