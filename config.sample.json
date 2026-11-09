@@ -1,0 +1,20 @@
+{
+  "output_dir": "~/Music/YouTube MP3",
+  "ytdlp_config": {
+    "common_args": [
+      "--ignore-config"
+    ],
+    "audio_format": "mp3",
+    "audio_quality": "0",
+    "audio_extra_args": [],
+    "video_format": "mp4",
+    "video_quality": "bestvideo[ext=mp4]+bestaudio[ext=m4a]/bestvideo+bestaudio/best",
+    "video_extra_args": [
+      "--merge-output-format",
+      "mp4",
+      "--recode-video",
+      "mp4"
+    ],
+    "custom_args": []
+  }
+}

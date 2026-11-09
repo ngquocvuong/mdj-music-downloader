@@ -1,0 +1,35 @@
+# Python
+__pycache__/
+*.pyc
+build/
+dist/
+*.egg-info/
+
+# Distribution
+*.deb
+debian/
+# yt-dlp binary (downloaded at build time, not part of the source)
+/yt-dlp
+
+# IDE
+.vscode/
+.idea/
+*.swp
+
+# OS
+.DS_Store
+
+# Config (user settings) – keep the sample
+*.json
+!config.sample.json
+
+# Logs
+*.log
+
+# Local notes (not for public repo)
+TODO.md
+TASKS.md
+*_NOTES.md
+!RELEASE_NOTES.md
+UI_UX_IMPROVEMENTS.md
+AUDIT_REPORT.md
