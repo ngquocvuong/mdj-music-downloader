@@ -7,6 +7,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 ## [1.0.3] - 2026-11-09
 
 ### Added
+- Click the "Saved to: …" message (underlined) to open that folder in your file manager — for single downloads and queues, including the Album/Folder subfolder.
 - "Update yt-dlp" works for every user on a shared computer: with an administrator password it updates yt-dlp for all users; without one (or if the password prompt is cancelled) it updates it just for that user, in `~/.local/share/mdj-music-downloader/`. The app always uses the newest working copy.
 - "Already up to date" check, so no password is asked for when there is nothing to update.
 
@@ -14,6 +15,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 - After a queue finished, the result message was cleared straight away. It now stays and shows where the files were saved, e.g. "Queue complete: 3 downloaded, 0 failed / Saved to: ~/Music/My Album" (including the Album/Folder subfolder).
 - Queue summary counted songs finished in an earlier run; it now counts only the current run.
 - Updating yt-dlp asked for the administrator password twice; now once.
+- Opening the browser (Support Development) or file manager from the installed app now uses the system's own libraries instead of the app's bundled ones, which could make them fail to start.
 - Updating failed for a second user on the same computer (shared temporary file in /tmp).
 - The window froze for a few seconds at startup while yt-dlp was checked; the check now runs in the background.
 

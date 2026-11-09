@@ -81,6 +81,34 @@ def get_ytdlp_version(path, timeout=30):
         return None, None
 
 
+def external_env():
+    """Environment for launching *other* programs (file manager, browser).
+
+    A PyInstaller build points LD_LIBRARY_PATH at its own bundled libraries; programs we
+    launch would inherit that and can crash loading the wrong libraries. Restore the original."""
+    env = dict(os.environ)
+    if getattr(sys, "frozen", False):
+        orig = env.pop("LD_LIBRARY_PATH_ORIG", None)
+        if orig is not None:
+            env["LD_LIBRARY_PATH"] = orig
+        else:
+            env.pop("LD_LIBRARY_PATH", None)
+    return env
+
+
+def open_with_system(target):
+    """Open a folder or URL with the desktop's default app. Returns True if a launcher was started."""
+    for cmd in (["xdg-open", target], ["gio", "open", target]):
+        if shutil.which(cmd[0]):
+            try:
+                subprocess.Popen(cmd, env=external_env(), stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
+                                 start_new_session=True)
+                return True
+            except OSError:
+                continue
+    return False
+
+
 def system_ytdlp_path():
     """yt-dlp shipped next to the app (/opt/mdj-music-downloader/yt-dlp), or None when running from source."""
     if getattr(sys, "frozen", False):
@@ -587,6 +615,7 @@ class MusicDownloader:
             height=30
         )
         self.status_label.pack(fill="x", padx=10, pady=(10, 0))
+        self._setup_status_link()
 
         # === RIGHT COLUMN CONTENT ===
 
@@ -816,7 +845,7 @@ class MusicDownloader:
                         text="✓ Download complete!",
                         text_color="#4caf50"
                     ))
-                    self.status_label.configure(text=f"Saved to: {msg_data}", text_color="#4caf50")
+                    self.show_saved_status(f"Saved to: {msg_data}", "#4caf50", msg_data)
                     self._keep_status = True  # don't let the following "reset" clear it
                 elif msg_type == "error":
                     self.progress_bar.stop()
@@ -849,6 +878,42 @@ class MusicDownloader:
 
         # Check queue again after 100ms
         self.root.after(100, self.check_queue)
+
+    # ---- clickable "Saved to:" status line ----
+    def _setup_status_link(self):
+        self._status_link_dir = None
+        self._status_link_text = None
+        self._status_font = ctk.CTkFont(size=9)
+        self._status_font_link = ctk.CTkFont(size=9, underline=True)
+        original_configure = self.status_label.configure
+
+        def configure(*args, **kwargs):
+            # Any other text written to the status line turns the link off
+            if "text" in kwargs and self._status_link_dir and kwargs["text"] != self._status_link_text:
+                self._status_link_dir = self._status_link_text = None
+                original_configure(font=self._status_font, cursor="")
+            return original_configure(*args, **kwargs)
+
+        self.status_label.configure = configure
+        self.status_label.bind("<Button-1>", self._on_status_click)
+
+    def show_saved_status(self, text, color, folder):
+        """Show a result message; clicking it opens `folder` in the file manager."""
+        self.status_label.configure(text=text, text_color=color)
+        self._status_link_dir, self._status_link_text = folder, text
+        self.status_label.configure(font=self._status_font_link, cursor="hand2")
+
+    def _on_status_click(self, event=None):
+        folder = self._status_link_dir
+        if not folder or self.status_label.cget("text") != self._status_link_text:
+            return
+        if not os.path.isdir(folder):
+            TooltipNotification(self.root, "⚠ Folder no longer exists")
+            return
+        if open_with_system(folder):
+            TooltipNotification(self.root, "Opening folder...")
+        else:
+            TooltipNotification(self.root, "⚠ Could not open the file manager")
 
     def check_ytdlp_version(self):
         """Check in the background that yt-dlp is installed and working, then update the status line."""
@@ -1435,10 +1500,11 @@ class MusicDownloader:
         summary = f"Queue complete: {done_count} downloaded, {failed_count} failed"
         if saved_dirs:
             summary += f"\nSaved to: {saved_dirs[0]}" + (f" (+{len(saved_dirs) - 1} more)" if len(saved_dirs) > 1 else "")
-        self.status_label.configure(
-            text=summary,
-            text_color="#4caf50" if failed_count == 0 else "#ff9800"
-        )
+        color = "#4caf50" if failed_count == 0 else "#ff9800"
+        if saved_dirs:
+            self.show_saved_status(summary, color, saved_dirs[0])
+        else:
+            self.status_label.configure(text=summary, text_color=color)
         self._keep_status = True  # don't let the following "reset" clear it
 
         self.message_queue.put(("reset", None))
@@ -1779,7 +1845,8 @@ class MusicDownloader:
         """Open Ko-fi support page in browser"""
         ko_fi_url = "https://ko-fi.com/mdj_musicdl"
         try:
-            webbrowser.open(ko_fi_url)
+            if not open_with_system(ko_fi_url):
+                webbrowser.open(ko_fi_url)
             TooltipNotification(self.root, "Opening support page in browser...")
         except Exception as e:
             TooltipNotification(self.root, f"Could not open browser: {e}")

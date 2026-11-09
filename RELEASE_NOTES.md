@@ -6,6 +6,7 @@
 - Fixed: updating failed for a second user on the same computer.
 - Faster startup: the window no longer freezes for a few seconds while yt-dlp is checked.
 - **Queue downloads now show where the files were saved** ("Saved to: …/Album name"), like single downloads.
+- **Click "Saved to: …" to open the folder** in your file manager.
 - The queue summary counts only the songs from the current run.
 
 ### v1.0.2
@@ -208,7 +209,7 @@ This application is licensed under the MIT License.
 
 ### v1.0.3 (2026-11-09)
 - 👥 "Update yt-dlp" works for standard users (per-user copy), one password prompt, faster startup
-- 📁 Queue shows "Saved to" folder when finished
+- 📁 Queue shows "Saved to" folder when finished; click it to open the folder
 
 ### v1.0.2 (2026-11-09)
 - 🐛 Fixed "yt-dlp error" on systems with Python older than 3.11 (standalone yt-dlp build)

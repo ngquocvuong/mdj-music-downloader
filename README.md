@@ -10,6 +10,7 @@ A modern, easy-to-use desktop application for downloading audio and video from Y
 - ⚙️ **Configurable yt-dlp Settings** - Customize download options via UI
 - 📋 **Queue Management** - Download multiple songs/videos in order
 - 📁 **Album Organization** - Auto-organize downloads into folders
+- 📂 **Open Folder in One Click** - Click "Saved to: …" when a download finishes
 - 🔢 **Smart Track Numbering** - Automatically number tracks (01.Song, 02.Song...)
 - 🎼 **Playlist Generation** - Auto-creates .m3u playlist files
 - 💾 **Queue Export/Import** - Save and load download queues
