@@ -890,7 +890,9 @@ class MusicDownloader:
         bg = self.status_label._apply_appearance_mode(self.status_label.cget("bg_color"))
         self._status_font = ctk.CTkFont(size=9)
         self.status_text = tk.Text(
-            self.status_label.master, height=1, wrap="word", font=self._status_font,
+            # width=1: don't ask for space (Text defaults to 80 characters, which widened the left
+            # panel); it fills the panel's existing width and wraps instead.
+            self.status_label.master, width=1, height=1, wrap="word", font=self._status_font,
             bg=bg, relief="flat", borderwidth=0, highlightthickness=0, padx=0, pady=6,
             cursor="arrow", takefocus=0, insertwidth=0,
             selectbackground=bg, inactiveselectbackground=bg, exportselection=False)
