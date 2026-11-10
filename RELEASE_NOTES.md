@@ -13,6 +13,14 @@
 - **New look:** teal colours matching the MDJ icon, a switch for Audio / Video, and light-yellow tooltips.
 - **No more "frozen" moments:** Supported Sites and yt-dlp Settings open straight away with a "Loading..." message instead of freezing the app for a couple of seconds.
 - **Modern folder and file chooser:** Output Folder, Export and Import now open your desktop's own file chooser.
+- **Add songs while a queue is downloading:** + Queue, Paste and Import keep working; the new songs are downloaded in the same run.
+- **Cancel always works**, also between two songs, and fully stops yt-dlp and ffmpeg.
+- Finished songs are never downloaded again, and failed songs are retried next time. "Download Queue (N)" counts only the songs still to download.
+- **Import skips songs already in the queue**, even when the YouTube link looks different (youtu.be, watch?v=, "?si=" share codes).
+- While downloading, songs can't be removed (press Cancel first). Removing a song keeps the other songs' ✓ / ✗ status.
+- Fixed: the app could freeze and then not close. Clicking X now always closes it and stops a running download.
+- Fixed: after Clear Queue, the buttons in the left panel could be cut off.
+- The window opens centred straight away, and the cursor shows the app is starting.
 
 ### v1.0.2
 - **Fixed:** downloads failed with "yt-dlp error! Please reinstall the application" on Ubuntu 22.04, Linux Mint 21 and other systems with Python older than 3.11. The app now ships yt-dlp's standalone build, which includes its own Python. **Please update if you installed v1.0.0 or v1.0.1.**
