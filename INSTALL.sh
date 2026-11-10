@@ -96,6 +96,7 @@ Type=Application
 Categories=AudioVideo;Audio;
 Terminal=false
 StartupWMClass=mdj-music-downloader
+StartupNotify=true
 Comment=Download music and videos from YouTube and other sites
 EOF
     chmod 644 /usr/share/applications/mdj-music-downloader.desktop

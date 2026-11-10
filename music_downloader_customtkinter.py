@@ -135,6 +135,37 @@ def native_dialog_command(kind, title, initialdir, filetypes=None, parent_xid=No
     return None
 
 
+_monitor_cache = []
+
+
+def monitor_at_pointer(widget):
+    """(x, y, width, height) of the monitor under the mouse, or None (uses xrandr)."""
+    try:
+        px, py = widget.winfo_pointerx(), widget.winfo_pointery()
+        if not _monitor_cache:
+            out = subprocess.run(["xrandr", "--listmonitors"], capture_output=True,
+                                 text=True, timeout=1, env=external_env()).stdout
+            for m in re.finditer(r"(\d+)/\d+x(\d+)/\d+\+(\d+)\+(\d+)", out):
+                w, h, x, y = map(int, m.groups())
+                _monitor_cache.append((x, y, w, h))
+        for x, y, w, h in _monitor_cache:
+            if x <= px < x + w and y <= py < y + h:
+                return (x, y, w, h)
+    except Exception:
+        pass
+    return None
+
+
+def centered_position(widget, width, height):
+    """Top-left position that centres a width x height window on the mouse's monitor."""
+    mon = monitor_at_pointer(widget)
+    if mon:
+        x, y, w, h = mon
+        return x + (w - width) // 2, y + (h - height) // 2
+    return ((widget.winfo_screenwidth() - width) // 2,
+            (widget.winfo_screenheight() - height) // 2)
+
+
 def open_with_system(target):
     """Open a folder or URL with the desktop's default app. Returns True if a launcher was started."""
     for cmd in (["xdg-open", target], ["gio", "open", target]):
@@ -358,7 +389,11 @@ class MusicDownloader:
         debug("Data structures initialized")
 
         # Window size - wider for two columns
-        self.root.geometry("900x700")
+        # Give the position right away: the window is first shown by the update in
+        # center_window_on_current_monitor(), and without a position it appeared in the
+        # top-left corner and then jumped to the centre.
+        x, y = centered_position(self.root, 900, 700)
+        self.root.geometry(f"900x700+{x}+{y}")
         self.root.resizable(True, True)
         self.root.minsize(800, 600)
         debug("Window size set")
@@ -911,67 +946,7 @@ class MusicDownloader:
     def center_window_on_current_monitor(self, width, height):
         """Center window on the monitor where the mouse cursor is"""
         self.root.update_idletasks()
-
-        # Get mouse cursor position to determine which monitor user is on
-        cursor_x = self.root.winfo_pointerx()
-        cursor_y = self.root.winfo_pointery()
-
-        # Try to get monitor info using xrandr
-        try:
-            import subprocess
-            result = subprocess.run(['xrandr'], capture_output=True, text=True, timeout=1)
-            if result.returncode == 0:
-                lines = result.stdout.split('\n')
-                monitors = []
-
-                for line in lines:
-                    if ' connected' in line:
-                        parts = line.split()
-                        for part in parts:
-                            # Look for geometry pattern like "1920x1080+0+0"
-                            if 'x' in part and '+' in part:
-                                try:
-                                    # Split by '+' to get resolution and position
-                                    res_pos = part.split('+')
-                                    if len(res_pos) >= 3:
-                                        # Parse width and height from resolution
-                                        w_h = res_pos[0].split('x')
-                                        if len(w_h) == 2:
-                                            mon_w = int(w_h[0])
-                                            mon_h = int(w_h[1])
-                                            mon_x = int(res_pos[1])
-                                            mon_y = int(res_pos[2])
-                                            monitors.append({
-                                                'x': mon_x, 'y': mon_y,
-                                                'width': mon_w, 'height': mon_h
-                                            })
-                                            break
-                                except (ValueError, IndexError):
-                                    continue
-
-                # Find which monitor contains the cursor
-                current_monitor = None
-                for mon in monitors:
-                    if (mon['x'] <= cursor_x < mon['x'] + mon['width'] and
-                        mon['y'] <= cursor_y < mon['y'] + mon['height']):
-                        current_monitor = mon
-                        break
-
-                # If found, center on that monitor
-                if current_monitor:
-                    x = current_monitor['x'] + (current_monitor['width'] - width) // 2
-                    y = current_monitor['y'] + (current_monitor['height'] - height) // 2
-                    self.root.geometry(f"{width}x{height}+{x}+{y}")
-                    return
-
-        except Exception:
-            pass
-
-        # Fallback: simple centering
-        screen_width = self.root.winfo_screenwidth()
-        screen_height = self.root.winfo_screenheight()
-        x = (screen_width - width) // 2
-        y = (screen_height - height) // 2
+        x, y = centered_position(self.root, width, height)
         self.root.geometry(f"{width}x{height}+{x}+{y}")
 
     def center_dialog(self, dialog, width, height):

@@ -8,3 +8,4 @@ Categories=AudioVideo;Audio;
 Keywords=music;mp3;youtube;download;video;
 Terminal=false
 StartupWMClass=mdj-music-downloader
+StartupNotify=true
