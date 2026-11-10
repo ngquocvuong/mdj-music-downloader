@@ -11,6 +11,7 @@
 - Long URLs in the queue are shortened with "..." instead of squeezing the X button.
 - "Supported Sites" moved to a small **?** next to "Video/Audio URL", so the progress bar and messages are no longer cut off at the bottom.
 - **New look:** teal colours matching the MDJ icon, a switch for Audio / Video, and light-yellow tooltips.
+- **Modern folder and file chooser:** Output Folder, Export and Import now open your desktop's own file chooser.
 
 ### v1.0.2
 - **Fixed:** downloads failed with "yt-dlp error! Please reinstall the application" on Ubuntu 22.04, Linux Mint 21 and other systems with Python older than 3.11. The app now ships yt-dlp's standalone build, which includes its own Python. **Please update if you installed v1.0.0 or v1.0.1.**

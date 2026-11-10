@@ -12,6 +12,7 @@ import tkinter as tk
 import tkinter.font as tkfont
 import re
 import tempfile
+import time
 from datetime import datetime
 
 # ═══════════════════════════════════════════════════════════════════
@@ -96,6 +97,42 @@ def external_env():
         else:
             env.pop("LD_LIBRARY_PATH", None)
     return env
+
+
+def native_dialog_command(kind, title, initialdir, filetypes=None, parent_xid=None, initialfile=""):
+    """Command line for the desktop's own file chooser (GTK via zenity, or KDE's kdialog).
+
+    kind is "dir", "open" or "save". Returns None when neither program is installed,
+    in which case the caller falls back to the built-in Tk dialog."""
+    initialdir = initialdir if initialdir and os.path.isdir(initialdir) else os.path.expanduser("~")
+    start = os.path.join(initialdir, initialfile) if initialfile else initialdir.rstrip("/") + "/"
+    filetypes = filetypes or []
+    if shutil.which("zenity"):
+        cmd = ["zenity", "--file-selection", f"--title={title}", f"--filename={start}", "--modal"]
+        if parent_xid:
+            cmd.append(f"--attach={parent_xid}")
+        if kind == "dir":
+            cmd.append("--directory")
+        elif kind == "save":
+            cmd += ["--save", "--confirm-overwrite"]
+        if kind != "dir":
+            for name, pattern in filetypes:
+                pattern = " ".join("*" if p == "*.*" else p for p in pattern.split())
+                cmd.append(f"--file-filter={name} | {pattern}")
+        return cmd
+    if shutil.which("kdialog"):
+        filt = "\n".join(f"{p} |{n}" for n, p in filetypes)
+        cmd = ["kdialog", "--title", title]
+        if parent_xid:
+            cmd += ["--attach", str(parent_xid)]
+        if kind == "dir":
+            cmd += ["--getexistingdirectory", initialdir]
+        elif kind == "open":
+            cmd += ["--getopenfilename", initialdir] + ([filt] if filt else [])
+        else:
+            cmd += ["--getsavefilename", start] + ([filt] if filt else [])
+        return cmd
+    return None
 
 
 def open_with_system(target):
@@ -1409,13 +1446,11 @@ class MusicDownloader:
             TooltipNotification(self.root, "Queue is empty - nothing to save")
             return
 
-        filename = filedialog.asksaveasfilename(
-            defaultextension=".txt",
-            filetypes=[("Text files", "*.txt"), ("All files", "*.*")],
-            title="Save Queue to File",
-            initialdir=self.output_dir
-        )
+        self.ask_path("save", "Save Queue to File", self._save_queue_to,
+                      filetypes=[("Text files", "*.txt"), ("All files", "*.*")],
+                      defaultextension=".txt", initialfile="queue.txt")
 
+    def _save_queue_to(self, filename):
         if filename:
             try:
                 with open(filename, 'w', encoding='utf-8') as f:
@@ -1427,12 +1462,10 @@ class MusicDownloader:
 
     def load_queue_from_file(self):
         """Load queue URLs from text file"""
-        filename = filedialog.askopenfilename(
-            filetypes=[("Text files", "*.txt"), ("All files", "*.*")],
-            title="Load Queue from File",
-            initialdir=self.output_dir
-        )
+        self.ask_path("open", "Load Queue from File", self._load_queue_from,
+                      filetypes=[("Text files", "*.txt"), ("All files", "*.*")])
 
+    def _load_queue_from(self, filename):
         if filename:
             try:
                 with open(filename, 'r', encoding='utf-8') as f:
@@ -2446,12 +2479,74 @@ class MusicDownloader:
         )
         cancel_btn.pack(side="right", expand=True, fill="x", padx=(5, 0))
 
+    def ask_path(self, kind, title, callback, initialdir=None, filetypes=None,
+                 defaultextension="", initialfile=""):
+        """Show the system file chooser without freezing the window; call callback(path).
+
+        callback gets "" when the user cancels. Falls back to the Tk dialog if no
+        system chooser is available or it fails to start."""
+        if getattr(self, "_picker_open", False):
+            return                      # a chooser is already open; ignore extra clicks
+        initialdir = initialdir or self.output_dir
+
+        def tk_dialog():
+            opts = dict(title=title, initialdir=initialdir, parent=self.root)
+            if kind == "dir":
+                return filedialog.askdirectory(**opts)
+            if filetypes:
+                opts["filetypes"] = filetypes
+            if kind == "open":
+                return filedialog.askopenfilename(**opts)
+            return filedialog.asksaveasfilename(defaultextension=defaultextension,
+                                                initialfile=initialfile, **opts)
+
+        def finish(path):
+            path = path or ""
+            if path and kind == "save" and defaultextension and not os.path.splitext(path)[1]:
+                path += defaultextension
+            callback(path)
+
+        try:
+            xid = int(self.root.wm_frame(), 16)
+        except (tk.TclError, ValueError):
+            xid = None
+        cmd = native_dialog_command(kind, title, initialdir, filetypes, xid, initialfile)
+        proc = None
+        if cmd:
+            try:
+                proc = subprocess.Popen(cmd, stdout=subprocess.PIPE, stderr=subprocess.DEVNULL,
+                                        stdin=subprocess.DEVNULL, env=external_env(), text=True)
+            except OSError:
+                proc = None
+        if proc is None:
+            finish(tk_dialog())
+            return
+
+        self._picker_open = True
+        self._picker_proc = proc
+        started = time.monotonic()
+
+        def poll():
+            if proc.poll() is None:
+                self.root.after(100, poll)
+                return
+            self._picker_open = False
+            out = (proc.stdout.read() or "").strip().splitlines()
+            if proc.returncode == 0 and out:
+                finish(out[0])
+            elif proc.returncode == 1 or time.monotonic() - started > 2:
+                finish("")              # user cancelled (or closed the chooser)
+            else:
+                finish(tk_dialog())     # chooser crashed at startup: use the Tk one
+        self.root.after(100, poll)
+
     def change_output_dir(self):
-        new_dir = filedialog.askdirectory(initialdir=self.output_dir, title="Select Output Folder")
-        if new_dir:
-            self.output_dir = new_dir
-            self.save_output_dir()
-            TooltipNotification(self.root, f"✓ Output folder updated")
+        def chosen(new_dir):
+            if new_dir:
+                self.output_dir = new_dir
+                self.save_output_dir()
+                TooltipNotification(self.root, "✓ Output folder updated")
+        self.ask_path("dir", "Select Output Folder", chosen)
 
     def on_closing(self):
         if self.downloading:

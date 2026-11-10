@@ -52,6 +52,7 @@ Section: sound
 Priority: optional
 Architecture: amd64
 Depends: ffmpeg
+Recommends: zenity | kdialog
 Installed-Size: ${INSTALLED_SIZE}
 Maintainer: MDJ Digital LLC <blackhawk_7585@icloud.com>
 Homepage: https://github.com/ngquocvuong/mdj-music-downloader

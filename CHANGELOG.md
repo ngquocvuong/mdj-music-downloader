@@ -17,6 +17,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 - "Download Type" is now a two-part switch: the selected type (Audio or Video) is filled teal, the other stays dark.
 - Tooltips and pop-up messages are now classic light yellow with dark text.
 - The header title and subtitle are centred together, with more space above the title.
+- Output Folder, Export and Import now use your desktop's own modern file chooser (with sidebar, bookmarks and breadcrumbs) instead of the old-style Tk dialog. The old dialog is still used if no system chooser is available.
 
 ### Fixed
 - After a queue finished, the result message was cleared straight away. It now stays and shows where the files were saved, e.g. "Queue complete: 3 downloaded, 0 failed / Saved to: ~/Music/My Album" (including the Album/Folder subfolder).
