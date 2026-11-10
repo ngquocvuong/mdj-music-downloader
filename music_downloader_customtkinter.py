@@ -12,6 +12,9 @@ import tkinter as tk
 import tkinter.font as tkfont
 import re
 import tempfile
+import itertools
+import signal
+import urllib.parse
 import time
 from datetime import datetime
 
@@ -133,6 +136,41 @@ def native_dialog_command(kind, title, initialdir, filetypes=None, parent_xid=No
             cmd += ["--getsavefilename", start] + ([filt] if filt else [])
         return cmd
     return None
+
+
+_item_ids = itertools.count(1)
+
+
+def new_queue_item(url):
+    """A queue entry. 'id' identifies it for the download thread (positions change when
+    items are removed or added during a download)."""
+    return {'id': next(_item_ids), 'url': url, 'status': 'waiting', 'widget': None}
+
+
+def url_key(url):
+    """Key for duplicate detection: the same YouTube video counts once, whatever the link
+    style (youtu.be / watch?v= / shorts / music.youtube) or share/tracking parameters."""
+    try:
+        u = urllib.parse.urlsplit(url.strip())
+        host = u.netloc.lower().split("@")[-1].split(":")[0]
+        if host.startswith("www."):
+            host = host[4:]
+        if host.startswith("m."):
+            host = host[2:]
+        vid = None
+        if host == "youtu.be":
+            vid = u.path.strip("/").split("/")[0]
+        elif host in ("youtube.com", "music.youtube.com", "youtube-nocookie.com"):
+            if u.path == "/watch":
+                vid = urllib.parse.parse_qs(u.query).get("v", [None])[0]
+            elif u.path.startswith(("/shorts/", "/embed/", "/live/")):
+                vid = u.path.split("/")[2]
+        if vid:
+            return "youtube:" + vid
+        query = "&".join(q for q in u.query.split("&") if q and not q.startswith(("si=", "utm_")))
+        return f"{host}{u.path.rstrip('/')}?{query}"
+    except Exception:
+        return url.strip()
 
 
 _monitor_cache = []
@@ -386,6 +424,7 @@ class MusicDownloader:
 
         # Download queue system
         self._ui_calls = queue.Queue()   # work for the Tk thread, see run_in_ui()
+        self._run_id = 0                 # changes on every start/cancel; stale threads see it
         self.download_queue = []  # List of {url, status, widget} dicts
         self.current_download_index = -1
         debug("Data structures initialized")
@@ -980,6 +1019,12 @@ class MusicDownloader:
         self.audio_button.configure(**(on if audio else off))
         self.video_button.configure(**(off if audio else on))
 
+    def _queue_index_of(self, item_id):
+        for i, item in enumerate(self.download_queue):
+            if item.get('id') == item_id:
+                return i
+        return None
+
     def run_in_ui(self, fn, *args, **kwargs):
         """Run fn on the Tk thread. Safe to call from any thread.
 
@@ -1033,15 +1078,18 @@ class MusicDownloader:
                 elif msg_type == "reset":
                     self.reset_ui(keep_status=getattr(self, "_keep_status", False))
                     self._keep_status = False
-                elif msg_type == "queue_success":
-                    self._run_done = getattr(self, "_run_done", 0) + 1
-                    self.update_queue_item_status(msg_data, 'done')
-                    self.current_download_index += 1
-                    self.root.after(200, self.process_next_queue_item)
-                elif msg_type == "queue_failed":
-                    self._run_failed = getattr(self, "_run_failed", 0) + 1
-                    self.update_queue_item_status(msg_data, 'failed')
-                    self.current_download_index += 1
+                elif msg_type in ("queue_success", "queue_failed"):
+                    run_id, item_id = msg_data
+                    if run_id != self._run_id:      # from a cancelled run: ignore
+                        continue
+                    ok = msg_type == "queue_success"
+                    if ok:
+                        self._run_done = getattr(self, "_run_done", 0) + 1
+                    else:
+                        self._run_failed = getattr(self, "_run_failed", 0) + 1
+                    index = self._queue_index_of(item_id)
+                    if index is not None:
+                        self.update_queue_item_status(index, 'done' if ok else 'failed')
                     self.root.after(200, self.process_next_queue_item)
 
         except queue.Empty:
@@ -1207,18 +1255,13 @@ class MusicDownloader:
             TooltipNotification(self.root, "⚠ Invalid URL - must start with http:// or https://")
             return
 
-        # Check for duplicates
-        for item in self.download_queue:
-            if item['url'] == url:
-                TooltipNotification(self.root, "⚠ URL already in queue")
-                return
+        # Check for duplicates (same video, whatever the link style)
+        key = url_key(url)
+        if any(url_key(item['url']) == key for item in self.download_queue):
+            TooltipNotification(self.root, "⚠ URL already in queue")
+            return
 
-        queue_item = {
-            'url': url,
-            'status': 'waiting',
-            'widget': None
-        }
-        self.download_queue.append(queue_item)
+        self.download_queue.append(new_queue_item(url))
 
         # Show queue panel when first item is added
         if len(self.download_queue) == 1:
@@ -1360,10 +1403,14 @@ class MusicDownloader:
             self.download_queue[i]['widget'] = None
             self.create_queue_item(i)
 
+    def pending_count(self):
+        """Queue items still to download (failed ones are retried on the next run)."""
+        return sum(1 for item in self.download_queue if item['status'] in ('waiting', 'failed'))
+
     def update_download_button_text(self):
-        """Update download button text based on queue size"""
-        queue_size = len(self.download_queue)
-        new_text = f"Download Queue ({queue_size})" if queue_size > 0 else "Download"
+        """Update download button text: number of queue items still to download"""
+        pending = self.pending_count()
+        new_text = f"Download Queue ({pending})" if pending > 0 else "Download"
         self.download_button.configure(text=new_text)
 
     def update_queue_item_status(self, index, status):
@@ -1500,39 +1547,45 @@ class MusicDownloader:
     def _load_queue_from(self, filename):
         if filename:
             try:
-                with open(filename, 'r', encoding='utf-8') as f:
-                    urls = [line.strip() for line in f if line.strip()]
+                # utf-8-sig: files saved by some editors start with a byte-order mark
+                with open(filename, 'r', encoding='utf-8-sig', errors='replace') as f:
+                    lines = [line.strip() for line in f if line.strip()]
 
-                if not urls:
+                if not lines:
                     TooltipNotification(self.root, "⚠ File is empty")
                     return
 
-                added_count = 0
-                skipped_count = 0
-                for url in urls:
-                    if url.startswith('http://') or url.startswith('https://'):
-                        # Check for duplicates
-                        if any(item['url'] == url for item in self.download_queue):
-                            skipped_count += 1
-                            continue
-
-                        queue_item = {
-                            'url': url,
-                            'status': 'waiting',
-                            'widget': None
-                        }
-                        self.download_queue.append(queue_item)
-
-                        if len(self.download_queue) == 1:
-                            self.empty_queue_label.pack_forget()
-
-                        self.create_queue_item(len(self.download_queue) - 1)
-                        added_count += 1
+                added_count = skipped_count = invalid_count = 0
+                keys = {url_key(item['url']) for item in self.download_queue}
+                for url in lines:
+                    if not (url.startswith('http://') or url.startswith('https://')):
+                        invalid_count += 1
+                        continue
+                    key = url_key(url)
+                    if key in keys:              # already queued (or twice in the file)
+                        skipped_count += 1
+                        continue
+                    keys.add(key)
+                    self.download_queue.append(new_queue_item(url))
+                    if len(self.download_queue) == 1:
+                        self.empty_queue_label.pack_forget()
+                    self.create_queue_item(len(self.download_queue) - 1)
+                    added_count += 1
 
                 self.update_download_button_text()
-                message = f"✓ Loaded {added_count} URLs"
-                if skipped_count > 0:
-                    message += f" ({skipped_count} duplicates skipped)"
+                if added_count == 0:
+                    message = "⚠ No new URLs in this file"
+                else:
+                    message = f"✓ Loaded {added_count} URLs"
+                    if self.downloading:
+                        message += " (added to the running queue)"
+                extras = []
+                if skipped_count:
+                    extras.append(f"{skipped_count} already in queue")
+                if invalid_count:
+                    extras.append(f"{invalid_count} lines skipped")
+                if extras:
+                    message += " (" + ", ".join(extras) + ")"
                 TooltipNotification(self.root, message)
 
             except Exception as e:
@@ -1635,13 +1688,18 @@ class MusicDownloader:
             return
 
         # Process queue or single download
-        if len(self.download_queue) > 0:
+        if self.pending_count() > 0:
             self.process_queue()
         else:
             url = self.url_entry.get().strip()
             if not url:
-                self.show_error_dialog("Error", "Please enter a URL")
+                if self.download_queue:
+                    TooltipNotification(self.root, "✓ Everything in the queue is already downloaded")
+                else:
+                    self.show_error_dialog("Error", "Please enter a URL")
                 return
+            self._run_id += 1
+            run_id = self._run_id
 
             self.download_button.pack_forget()
             self.cancel_button.pack(fill="x", expand=True)
@@ -1670,27 +1728,28 @@ class MusicDownloader:
                 text_color=("#666666", "#888888")
             )
 
-            threading.Thread(target=self.download_music, args=(url, -1, self._download_options()),
-                             daemon=True).start()
+            threading.Thread(target=self.download_music, args=(url, None, self._download_options()),
+                             kwargs={"run_id": run_id}, daemon=True).start()
 
     def process_queue(self):
-        """Process all queue items"""
-        if len(self.download_queue) == 0:
+        """Download every queue item that is waiting (or failed last time)"""
+        if self.pending_count() == 0:
             return
+        for i, item in enumerate(self.download_queue):
+            if item['status'] == 'failed':          # retry failed items
+                self.update_queue_item_status(i, 'waiting')
 
         self.download_button.pack_forget()
         self.cancel_button.pack(fill="x", expand=True)
-        self.url_entry.configure(state="disabled")
-        self.paste_button.configure(state="disabled")
+        # Settings that apply to the whole run are locked. Adding URLs (+ Queue / Import)
+        # stays possible: new items are downloaded in this run.
         self.audio_button.configure(state="disabled")
         self.video_button.configure(state="disabled")
-        self.queue_button.configure(state="disabled")
         self.album_entry.configure(state="disabled")
         self.number_tracks_checkbox.configure(state="disabled")
         self.clear_queue_btn.configure(state="disabled")
-        self.save_queue_btn.configure(state="disabled")
-        self.load_queue_btn.configure(state="disabled")
 
+        self._run_id += 1
         self.downloading = True
         self.status_label.configure(text="")  # Clear old status
         self.progress_frame.pack(fill="x", padx=20, pady=(10, 0))
@@ -1701,26 +1760,25 @@ class MusicDownloader:
         self.process_next_queue_item()
 
     def process_next_queue_item(self):
-        """Process next item in queue"""
-        while self.current_download_index < len(self.download_queue):
-            item = self.download_queue[self.current_download_index]
+        """Start the first waiting item; finish the run when none is left"""
+        if not self.downloading:
+            return
+        for index, item in enumerate(self.download_queue):
             if item['status'] == 'waiting':
-                url = item['url']
-                self.update_queue_item_status(self.current_download_index, 'downloading')
+                self.current_download_index = index
+                self.update_queue_item_status(index, 'downloading')
 
                 self.progress_bar.set(0)
                 self.progress_bar.start()
                 self.progress_label.configure(
-                    text=f"Downloading {self.current_download_index + 1}/{len(self.download_queue)}...",
+                    text=f"Downloading {index + 1}/{len(self.download_queue)}...",
                     text_color=("#1a8f80", ACCENT_FG)
                 )
-
                 threading.Thread(target=self.download_music,
-                                 args=(url, self.current_download_index, self._download_options()),
+                                 args=(item['url'], item['id'], self._download_options()),
+                                 kwargs={"run_id": self._run_id, "track_no": index + 1},
                                  daemon=True).start()
                 return
-
-            self.current_download_index += 1
 
         self.queue_processing_complete()
 
@@ -1820,22 +1878,23 @@ class MusicDownloader:
             # Close dialog first
             confirm_window.destroy()
 
-            if self.download_process:
-                self.download_process.terminate()
-                self.downloading = False
+            if not self.downloading:            # finished while the dialog was open
+                return
+            # Invalidate the running download thread first, then stop yt-dlp (if it is
+            # running: it may be between two songs, or still checking the URL)
+            self._run_id += 1
+            self.downloading = False
+            self._stop_process(self.download_process)
 
-                # Reset queue items that were downloading back to waiting
-                for item in self.download_queue:
-                    if item['status'] == 'downloading':
-                        item['status'] = 'waiting'
-                        self.update_queue_item_status(self.download_queue.index(item), 'waiting')
+            # Reset queue items that were downloading back to waiting
+            for i, item in enumerate(self.download_queue):
+                if item['status'] == 'downloading':
+                    self.update_queue_item_status(i, 'waiting')
 
-                # Reset download index
-                self.current_download_index = -1
-
-                self.reset_ui()
-                self.progress_label.configure(text="Download cancelled")
-                self.root.after(2000, lambda: self.progress_frame.pack_forget())
+            self.current_download_index = -1
+            self.reset_ui()
+            self.progress_label.configure(text="Download cancelled")
+            self.root.after(2000, lambda: self.downloading or self.progress_frame.pack_forget())
 
         yes_btn = ctk.CTkButton(
             button_frame,
@@ -2001,16 +2060,30 @@ class MusicDownloader:
                 "album": self.album_entry.get().strip(),
                 "number": bool(self.number_tracks_var.get())}
 
-    def download_music(self, url, queue_index=-1, opts=None):
-        """Download music from URL (runs in a background thread)"""
+    def download_music(self, url, item_id=None, opts=None, run_id=None, track_no=None):
+        """Download music from URL (runs in a background thread).
+
+        item_id: the queue item (None = single download). run_id: the run this belongs to;
+        once it is cancelled (or a new run started) this thread reports nothing more."""
         if opts is None:
             opts = self._download_options()
+        if run_id is None:
+            run_id = self._run_id
+        queue_index = 0 if item_id is not None else -1   # >= 0 means "queue item" below
+        current = lambda: self._run_id == run_id and self.downloading
+
+        def report(kind, data):
+            if not current():
+                return
+            if kind in ("queue_success", "queue_failed"):
+                data = (run_id, item_id)
+            self.message_queue.put((kind, data))
         os.makedirs(self.output_dir, exist_ok=True)
         ytdlp_path = self.get_yt_dlp_path()
 
         if not shutil.which(ytdlp_path) and not os.path.exists(ytdlp_path):
             if queue_index >= 0:
-                self.message_queue.put(("queue_failed", queue_index))
+                report("queue_failed", None)
             else:
                 # Show appropriate message based on whether app is bundled
                 if getattr(sys, 'frozen', False):
@@ -2021,8 +2094,8 @@ class MusicDownloader:
                     error_msg = ("yt-dlp not found!\n\n"
                                 "Please install it with:\n"
                                 "pip3 install -U yt-dlp")
-                self.message_queue.put(("error", error_msg))
-                self.message_queue.put(("reset", None))
+                report("error", error_msg)
+                report("reset", None)
             return
 
         # Check if video mode is selected but URL has no video
@@ -2034,11 +2107,11 @@ class MusicDownloader:
                 # Audio-only content - prevent download
                 error_msg = "This URL has no video.\nPlease select 'Audio (MP3)' mode."
                 if queue_index >= 0:
-                    self.message_queue.put(("queue_failed", queue_index))
-                    self.message_queue.put(("error", error_msg))
+                    report("queue_failed", None)
+                    report("error", error_msg)
                 else:
-                    self.message_queue.put(("error", error_msg))
-                    self.message_queue.put(("reset", None))
+                    report("error", error_msg)
+                    report("reset", None)
                 return
 
         album_name = opts["album"]
@@ -2050,25 +2123,32 @@ class MusicDownloader:
         debug(f"yt-dlp command: {' '.join(command)}")
 
         try:
+            if not current():                   # cancelled while checking the URL
+                return
             self.run_in_ui(self.progress_label.configure, text="Downloading...")
-            self.download_process = subprocess.Popen(
+            # Own process group, so Cancel can stop yt-dlp *and* the ffmpeg it starts
+            proc = subprocess.Popen(
                 command,
                 stdout=subprocess.PIPE,
                 stderr=subprocess.PIPE,
-                text=True
+                text=True,
+                start_new_session=True
             )
-            stdout, stderr = self.download_process.communicate()
+            self.download_process = proc
+            if not current():                   # cancelled just now
+                self._stop_process(proc)
+            stdout, stderr = proc.communicate()
 
-            if not self.downloading:
+            if not current():
                 return
 
-            if self.download_process.returncode != 0:
+            if proc.returncode != 0:
                 # Parse error and show user-friendly message instead of raw stderr
                 error_message = self.parse_error_message(stderr)
                 if queue_index >= 0:
-                    self.message_queue.put(("queue_failed", queue_index))
+                    report("queue_failed", None)
                 else:
-                    self.message_queue.put(("error", error_message))
+                    report("error", error_message)
             else:
                 # Apply track numbering if enabled and downloading from queue
                 if opts["number"] and queue_index >= 0:
@@ -2077,26 +2157,27 @@ class MusicDownloader:
                         files = [os.path.join(download_dir, f) for f in os.listdir(download_dir) if os.path.isfile(os.path.join(download_dir, f))]
                         if files:
                             latest_file = max(files, key=os.path.getctime)
-                            # Use queue_index + 1 as track number (1-based)
-                            self.add_track_number(latest_file, queue_index + 1)
+                            # Track number = position in the queue (1-based)
+                            self.add_track_number(latest_file, track_no or 1)
                     except Exception as e:
                         debug(f"Warning: Could not apply track numbering: {e}", level="WARN")
 
                 if queue_index >= 0:
                     if download_dir not in self._queue_saved_dirs:
                         self._queue_saved_dirs.append(download_dir)
-                    self.message_queue.put(("queue_success", queue_index))
+                    report("queue_success", None)
                 else:
-                    self.message_queue.put(("success", download_dir))
+                    report("success", download_dir)
         except Exception as error:
             if self.downloading:
                 if queue_index >= 0:
-                    self.message_queue.put(("queue_failed", queue_index))
+                    report("queue_failed", None)
                 else:
-                    self.message_queue.put(("error", str(error)))
+                    report("error", str(error))
         finally:
-            self.download_process = None
-            if queue_index < 0:
+            if self.download_process is not None and self.download_process is locals().get("proc"):
+                self.download_process = None
+            if queue_index < 0 and current():
                 self.downloading = False
                 self.message_queue.put(("reset", None))
 
@@ -2107,11 +2188,7 @@ class MusicDownloader:
         self.cancel_button.pack_forget()
 
         # Update button text based on current queue state BEFORE packing
-        queue_size = len(self.download_queue)
-        if queue_size > 0:
-            self.download_button.configure(text=f"Download Queue ({queue_size})")
-        else:
-            self.download_button.configure(text="Download")
+        self.update_download_button_text()
 
         self.download_button.pack(fill="x", expand=True)
 
@@ -2734,14 +2811,23 @@ class MusicDownloader:
         else:
             self.close_app()
 
+    @staticmethod
+    def _stop_process(proc):
+        """Stop a yt-dlp process and its children (ffmpeg): it runs in its own group."""
+        if proc is None or proc.poll() is not None:
+            return
+        try:
+            os.killpg(proc.pid, signal.SIGTERM)
+        except Exception:
+            try:
+                proc.terminate()
+            except Exception:
+                pass
+
     def close_app(self):
         """Close the app. Always works: if destroying the window fails, exit anyway."""
-        try:
-            proc = getattr(self, "download_process", None)
-            if proc and proc.poll() is None:
-                proc.terminate()            # don't leave yt-dlp running
-        except Exception:
-            pass
+        self._run_id += 1                   # nothing may report back any more
+        self._stop_process(getattr(self, "download_process", None))   # don't leave yt-dlp running
         try:
             self.root.destroy()
         except Exception as e:

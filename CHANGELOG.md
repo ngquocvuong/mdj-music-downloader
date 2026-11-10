@@ -13,6 +13,10 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 - "Already up to date" check, so no password is asked for when there is nothing to update.
 
 ### Changed
+- While a queue is downloading you can keep adding songs (+ Queue, Paste, Import); they are downloaded in the same run.
+- "Download Queue (N)" now counts only the songs still to download. Songs that failed are tried again on the next run; finished songs are not downloaded again.
+- Duplicate detection recognises the same YouTube video whatever the link looks like (youtu.be, watch?v=, shorts, "?si=" share codes), also when importing.
+- Import reports what it skipped (already in the queue, or lines that are not links) and reads files saved with a byte-order mark or Windows line endings.
 - New colour scheme matching the MDJ icon: teal accents (buttons, progress bars, checkbox) with dark navy text on teal buttons, instead of the default blue.
 - "Download Type" is now a two-part switch: the selected type (Audio or Video) is filled teal, the other stays dark.
 - Tooltips and pop-up messages are now classic light yellow with dark text.
@@ -20,6 +24,10 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 - Output Folder, Export and Import now use your desktop's own modern file chooser (with sidebar, bookmarks and breadcrumbs) instead of the old-style Tk dialog. The old dialog is still used if no system chooser is available.
 
 ### Fixed
+- Cancel did nothing if pressed between two songs (or while a video link was being checked); the queue carried on. It now always stops, including yt-dlp's ffmpeg process.
+- Cancel and then Download straight away could let the cancelled song report back into the new run (wrong song marked failed, two downloads at once).
+- Removing a finished song from the queue during a download made the app mark the wrong song and skip the next one.
+- Closing the app during a queue download started the next song in the background.
 - The app could freeze for good (and then not close) when a background task (the yt-dlp check at startup, loading Supported Sites, updating yt-dlp, or a download) talked to the window at the same moment as the window was redrawing. Background tasks now hand their updates to the window safely.
 - Clicking X now always closes the app, and stops a running download; problems while closing or in buttons are written to ~/.cache/mdj-music-downloader/errors.log.
 - After Clear Queue the left panel could change width, leaving the Paste and + Queue buttons cut off at the right. The left panel now has a fixed width.
