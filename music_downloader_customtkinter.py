@@ -120,6 +120,41 @@ def system_ytdlp_path():
 ctk.set_appearance_mode("dark")
 ctk.set_default_color_theme("blue")
 
+# Brand colours, taken from the MDJ icon (teal headphones on navy)
+ACCENT = "#35d6c1"          # teal fill for primary buttons, switches, progress
+ACCENT_HOVER = "#2bb3a1"    # slightly darker teal on hover
+ACCENT_TEXT = "#17243a"     # navy text on teal (white on teal is hard to read)
+ACCENT_FG = "#35d6c1"       # teal used as a text colour on dark backgrounds
+ACCENT_DIM = "#1f4d49"      # dark teal tint: hover for outline buttons
+LIGHT_TEXT = "#DCE4EE"      # normal light text on dark/coloured buttons
+SWITCH_TRACK = "#1b2023"    # Download Type switch: dark track / unselected half
+SWITCH_HOVER = "#262d31"
+
+
+def _apply_brand_theme():
+    """Swap CustomTkinter's blue accent for the MDJ teal in the loaded theme."""
+    blue = {"#3B8ED0", "#1F6AA5"}
+    blue_hover = {"#36719F", "#144870"}
+    theme = ctk.ThemeManager.theme
+    for widget, opts in theme.items():
+        if not isinstance(opts, dict):
+            continue
+        for key, val in opts.items():
+            if isinstance(val, list) and len(val) == 2 and all(isinstance(v, str) for v in val):
+                up = {v.upper() for v in val}
+                if up <= blue:
+                    opts[key] = [ACCENT, ACCENT]
+                elif up <= blue_hover:
+                    opts[key] = [ACCENT_HOVER, ACCENT_HOVER]
+    theme["CTkButton"]["text_color"] = [ACCENT_TEXT, ACCENT_TEXT]
+    theme["CTkSegmentedButton"]["text_color"] = [LIGHT_TEXT, LIGHT_TEXT]
+    theme["CTkOptionMenu"]["text_color"] = [ACCENT_TEXT, ACCENT_TEXT]
+    theme["CTkCheckBox"]["checkmark_color"] = [ACCENT_TEXT, ACCENT_TEXT]
+    theme["CTkCheckBox"]["hover_color"] = [ACCENT_HOVER, ACCENT_HOVER]
+
+
+_apply_brand_theme()
+
 
 class RoundIconButton(ctk.CTkButton):
     """CTkButton that can be a true circle: CTk reserves corner_radius-wide side columns
@@ -181,7 +216,8 @@ class TooltipNotification:
         self.label = ctk.CTkLabel(
             self.tooltip,
             text=message,
-            fg_color=("#3b8ed0", "#1f6aa5"),
+            fg_color=ACCENT,
+            text_color=ACCENT_TEXT,
             corner_radius=8,
             padx=20,
             pady=10
@@ -458,9 +494,9 @@ class MusicDownloader:
             text="?",
             width=20, height=20, corner_radius=10, border_spacing=0,
             font=ctk.CTkFont(size=12, weight="bold"),
-            fg_color=("#3b8ed0", "#1f6aa5"),
-            hover_color=("#36719f", "#144870"),
-            text_color="white",
+            fg_color=ACCENT,
+            hover_color=ACCENT_HOVER,
+            text_color=ACCENT_TEXT,
             command=self.show_supported_sites
         )
         self.sites_help_btn.pack(side="left", padx=(6, 0))
@@ -530,7 +566,7 @@ class MusicDownloader:
             self.progress_frame,
             text="",
             font=ctk.CTkFont(size=11),
-            text_color=("#1f6aa5", "#3b8ed0")
+            text_color=("#1a8f80", ACCENT_FG)
         )
         self.progress_label.pack(pady=(5, 0))
 
@@ -545,29 +581,32 @@ class MusicDownloader:
         )
         radio_label.pack(anchor="w", pady=(0, 8))
 
-        type_buttons = ctk.CTkFrame(self.radio_frame, fg_color="transparent")
+        # Segmented switch: a dark track; the selected half is filled teal
+        type_buttons = ctk.CTkFrame(self.radio_frame, fg_color=SWITCH_TRACK, corner_radius=10)
         type_buttons.pack(fill="x")
 
         self.audio_button = ctk.CTkButton(
             type_buttons,
             text="Audio (MP3)",
             command=lambda: self._select_type("audio"),
-            height=35,
-            fg_color=("#3b8ed0", "#1f6aa5"),
-            corner_radius=8
+            height=33,
+            corner_radius=8,
+            border_width=0,
+            font=ctk.CTkFont(size=13, weight="bold")
         )
-        self.audio_button.pack(side="left", fill="x", expand=True, padx=(0, 5))
+        self.audio_button.pack(side="left", fill="x", expand=True, padx=(3, 1), pady=3)
 
         self.video_button = ctk.CTkButton(
             type_buttons,
             text="Video (MP4)",
             command=lambda: self._select_type("video"),
-            height=35,
-            fg_color="transparent",
-            border_width=2,
-            corner_radius=8
+            height=33,
+            corner_radius=8,
+            border_width=0,
+            font=ctk.CTkFont(size=13, weight="bold")
         )
-        self.video_button.pack(side="left", fill="x", expand=True, padx=(5, 0))
+        self.video_button.pack(side="left", fill="x", expand=True, padx=(1, 3), pady=3)
+        self._select_type(self.download_type.get())
 
         # Button frame - Download/Cancel and Queue buttons
         self.button_frame = ctk.CTkFrame(left_frame, fg_color="transparent")
@@ -597,7 +636,8 @@ class MusicDownloader:
             font=ctk.CTkFont(size=15),
             fg_color="#d32f2f",
             hover_color="#b71c1c",
-            corner_radius=10
+            corner_radius=10,
+            text_color=LIGHT_TEXT
         )
 
         # Right side - Queue button (fixed position)
@@ -610,7 +650,9 @@ class MusicDownloader:
             font=ctk.CTkFont(size=15),
             corner_radius=10,
             fg_color="transparent",
-            border_width=2
+            border_width=2,
+            text_color=LIGHT_TEXT,
+            hover_color=ACCENT_DIM
         )
         self.queue_button.pack(side="right")
 
@@ -625,7 +667,9 @@ class MusicDownloader:
             height=32,
             font=ctk.CTkFont(size=11),
             fg_color="transparent",
-            border_width=1
+            border_width=1,
+            text_color=LIGHT_TEXT,
+            hover_color=ACCENT_DIM
         )
         settings_btn.pack(fill="x", pady=(0, 5))
 
@@ -637,7 +681,9 @@ class MusicDownloader:
             height=32,
             font=ctk.CTkFont(size=11),
             fg_color="transparent",
-            border_width=1
+            border_width=1,
+            text_color=LIGHT_TEXT,
+            hover_color=ACCENT_DIM
         )
         ytdlp_settings_btn.pack(fill="x", pady=(0, 5))
 
@@ -649,7 +695,9 @@ class MusicDownloader:
             height=32,
             font=ctk.CTkFont(size=11),
             fg_color="transparent",
-            border_width=1
+            border_width=1,
+            text_color=LIGHT_TEXT,
+            hover_color=ACCENT_DIM
         )
         update_ytdlp_btn.pack(fill="x", pady=(0, 5))
 
@@ -768,7 +816,9 @@ class MusicDownloader:
             height=34,
             font=ctk.CTkFont(size=11),
             fg_color="transparent",
-            border_width=2
+            border_width=2,
+            text_color=LIGHT_TEXT,
+            hover_color=ACCENT_DIM
         )
         self.save_queue_btn.pack(side="left", fill="x", expand=True, padx=2)
 
@@ -779,7 +829,9 @@ class MusicDownloader:
             height=34,
             font=ctk.CTkFont(size=11),
             fg_color="transparent",
-            border_width=2
+            border_width=2,
+            text_color=LIGHT_TEXT,
+            hover_color=ACCENT_DIM
         )
         self.load_queue_btn.pack(side="left", fill="x", expand=True, padx=(4, 0))
 
@@ -871,29 +923,15 @@ class MusicDownloader:
         dialog.geometry(f"{width}x{height}+{x}+{y}")
 
     def _select_type(self, type_value):
-        """Update download type and button states"""
+        """Update download type and the segmented switch"""
         self.download_type.set(type_value)
-
-        if type_value == "audio":
-            # Audio selected - highlight audio button
-            self.audio_button.configure(
-                fg_color=("#3b8ed0", "#1f6aa5"),
-                border_width=0
-            )
-            self.video_button.configure(
-                fg_color="transparent",
-                border_width=2
-            )
-        else:
-            # Video selected - highlight video button
-            self.audio_button.configure(
-                fg_color="transparent",
-                border_width=2
-            )
-            self.video_button.configure(
-                fg_color=("#3b8ed0", "#1f6aa5"),
-                border_width=0
-            )
+        on = dict(fg_color=ACCENT, hover_color=ACCENT_HOVER,
+                  text_color=ACCENT_TEXT, text_color_disabled=ACCENT_DIM)
+        off = dict(fg_color=SWITCH_TRACK, hover_color=SWITCH_HOVER,
+                   text_color="#8a949c", text_color_disabled="#4a5257")
+        audio = type_value == "audio"
+        self.audio_button.configure(**(on if audio else off))
+        self.video_button.configure(**(off if audio else on))
 
     def check_queue(self):
         """Check message queue from background thread"""
@@ -1151,7 +1189,8 @@ class MusicDownloader:
             command=lambda idx=index: self.remove_from_queue(idx),
             fg_color="transparent",
             hover_color=("#d32f2f", "#b71c1c"),
-            font=ctk.CTkFont(size=14)
+            font=ctk.CTkFont(size=14),
+            text_color=LIGHT_TEXT
         )
         remove_btn.pack(side="right", padx=5)
 
@@ -1265,7 +1304,7 @@ class MusicDownloader:
                 status_icons = {'waiting': '…', 'downloading': '↓', 'done': '✓', 'failed': '✗'}
                 status_colors = {
                     'waiting': ("#666666", "#888888"),
-                    'downloading': ("#1f6aa5", "#3b8ed0"),
+                    'downloading': ("#1a8f80", ACCENT_FG),
                     'done': "#4caf50",
                     'failed': "#f44336"
                 }
@@ -1348,7 +1387,8 @@ class MusicDownloader:
             height=35,
             fg_color="#d32f2f",
             hover_color="#b71c1c",
-            command=do_clear
+            command=do_clear,
+            text_color=LIGHT_TEXT
         )
         yes_btn.pack(side="left", expand=True, fill="x", padx=(0, 10))
 
@@ -1555,7 +1595,7 @@ class MusicDownloader:
             self.progress_bar.start()
             self.progress_label.configure(
                 text="Starting download...",
-                text_color=("#1f6aa5", "#3b8ed0")
+                text_color=("#1a8f80", ACCENT_FG)
             )
             self.status_label.configure(
                 text="Downloading...",
@@ -1603,7 +1643,7 @@ class MusicDownloader:
                 self.progress_bar.start()
                 self.progress_label.configure(
                     text=f"Downloading {self.current_download_index + 1}/{len(self.download_queue)}...",
-                    text_color=("#1f6aa5", "#3b8ed0")
+                    text_color=("#1a8f80", ACCENT_FG)
                 )
 
                 threading.Thread(target=self.download_music, args=(url, self.current_download_index), daemon=True).start()
@@ -1732,7 +1772,8 @@ class MusicDownloader:
             height=35,
             fg_color="#d32f2f",
             hover_color="#b71c1c",
-            command=do_cancel
+            command=do_cancel,
+            text_color=LIGHT_TEXT
         )
         yes_btn.pack(side="left", expand=True, fill="x", padx=(0, 10))
 
@@ -2207,7 +2248,8 @@ class MusicDownloader:
             command=reset_defaults,
             height=35,
             fg_color="#8B4545",
-            hover_color="#6B3535"
+            hover_color="#6B3535",
+            text_color=LIGHT_TEXT
         )
         reset_btn.pack(side="left", expand=True, fill="x", padx=(0, 5))
 
@@ -2216,7 +2258,7 @@ class MusicDownloader:
             text="Save Settings",
             command=save_settings,
             height=35,
-            fg_color=("#3b8ed0", "#1f6aa5")
+            fg_color=ACCENT
         )
         save_btn.pack(side="left", expand=True, fill="x", padx=(5, 0))
 
@@ -2226,7 +2268,9 @@ class MusicDownloader:
             command=settings_window.destroy,
             height=35,
             fg_color="transparent",
-            border_width=1
+            border_width=1,
+            text_color=LIGHT_TEXT,
+            hover_color=ACCENT_DIM
         )
         cancel_btn.pack(fill="x", padx=15, pady=(0, 10))
 
@@ -2382,7 +2426,8 @@ class MusicDownloader:
             command=do_update,
             height=35,
             fg_color="#2b7a2b",
-            hover_color="#3a9a3a"
+            hover_color="#3a9a3a",
+            text_color=LIGHT_TEXT
         )
         update_btn.pack(side="left", expand=True, fill="x", padx=(0, 5))
 
@@ -2392,7 +2437,9 @@ class MusicDownloader:
             command=update_window.destroy,
             height=35,
             fg_color="transparent",
-            border_width=1
+            border_width=1,
+            text_color=LIGHT_TEXT,
+            hover_color=ACCENT_DIM
         )
         cancel_btn.pack(side="right", expand=True, fill="x", padx=(5, 0))
 
@@ -2437,7 +2484,8 @@ class MusicDownloader:
                 height=35,
                 fg_color="#d32f2f",
                 hover_color="#b71c1c",
-                command=lambda: [self.root.destroy(), confirm_window.destroy()]
+                command=lambda: [self.root.destroy(), confirm_window.destroy()],
+                text_color=LIGHT_TEXT
             )
             yes_btn.pack(side="left", expand=True, fill="x", padx=(0, 10))
 
