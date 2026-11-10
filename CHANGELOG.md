@@ -26,7 +26,8 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 ### Fixed
 - Cancel did nothing if pressed between two songs (or while a video link was being checked); the queue carried on. It now always stops, including yt-dlp's ffmpeg process.
 - Cancel and then Download straight away could let the cancelled song report back into the new run (wrong song marked failed, two downloads at once).
-- Removing a finished song from the queue during a download made the app mark the wrong song and skip the next one.
+- Removing a song from the queue during a download made the app pause, mark the wrong song and skip the next one. While downloading, the X buttons are now disabled (press Cancel first).
+- Removing a song from the queue redrew every row as "waiting", so finished (✓) and failed songs lost their status. Now only that row is removed.
 - Closing the app during a queue download started the next song in the background.
 - The app could freeze for good (and then not close) when a background task (the yt-dlp check at startup, loading Supported Sites, updating yt-dlp, or a download) talked to the window at the same moment as the window was redrawing. Background tasks now hand their updates to the window safely.
 - Clicking X now always closes the app, and stops a running download; problems while closing or in buttons are written to ~/.cache/mdj-music-downloader/errors.log.

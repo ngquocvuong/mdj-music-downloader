@@ -1301,13 +1301,15 @@ class MusicDownloader:
             text="X",
             width=30,
             height=25,
-            command=lambda idx=index: self.remove_from_queue(idx),
+            command=lambda item_id=item['id']: self.remove_queue_item(item_id),
             fg_color="transparent",
             hover_color=("#d32f2f", "#b71c1c"),
             font=ctk.CTkFont(size=14),
             text_color=LIGHT_TEXT
         )
         remove_btn.pack(side="right", padx=5)
+        if self.downloading:
+            remove_btn.configure(state="disabled")   # removing songs needs Cancel first
 
         url_label = ctk.CTkLabel(
             top_row,
@@ -1338,6 +1340,9 @@ class MusicDownloader:
             'remove_btn': remove_btn,
             'progress_bar': progress_bar
         }
+        # Show the item's real state (a row could otherwise show "waiting" for a done song)
+        if item['status'] != 'waiting':
+            self.update_queue_item_status(index, item['status'])
 
     @staticmethod
     def _truncate_to_width(text, font, max_px, ellipsis="..."):
@@ -1371,20 +1376,23 @@ class MusicDownloader:
         except tk.TclError:
             pass
 
+    def remove_queue_item(self, item_id):
+        """X button of a queue row"""
+        index = self._queue_index_of(item_id)
+        if index is not None:
+            self.remove_from_queue(index)
+
     def remove_from_queue(self, index):
-        """Remove item from queue"""
+        """Remove item from queue (not while downloading: press Cancel first)"""
+        if self.downloading:
+            TooltipNotification(self.root, "⚠ Press Cancel first to remove songs")
+            return
         if 0 <= index < len(self.download_queue):
-            item = self.download_queue[index]
-
-            if item['status'] == 'downloading':
-                TooltipNotification(self.root, "⚠ Cannot remove item being downloaded")
-                return
-
+            item = self.download_queue.pop(index)
+            # Remove just this row: the other rows keep their widgets (and their status)
             if item['widget']:
                 item['widget']['frame'].destroy()
-
-            self.download_queue.pop(index)
-            self.rebuild_queue_display()
+                item['widget'] = None
 
             if len(self.download_queue) == 0:
                 self.empty_queue_label.pack(expand=True, pady=50)
@@ -1392,16 +1400,14 @@ class MusicDownloader:
             # Update button text
             self.update_download_button_text()
 
-    def rebuild_queue_display(self):
-        """Rebuild queue display after removal"""
-        # Destroy all queue item widgets (but not empty_queue_label)
-        for widget in self.queue_scroll.winfo_children():
-            if widget != self.empty_queue_label:
-                widget.destroy()
-
-        for i in range(len(self.download_queue)):
-            self.download_queue[i]['widget'] = None
-            self.create_queue_item(i)
+    def _set_remove_buttons(self, enabled):
+        """Enable/disable the X buttons of all queue rows"""
+        for item in self.download_queue:
+            if item['widget']:
+                try:
+                    item['widget']['remove_btn'].configure(state="normal" if enabled else "disabled")
+                except tk.TclError:
+                    pass
 
     def pending_count(self):
         """Queue items still to download (failed ones are retried on the next run)."""
@@ -1700,6 +1706,7 @@ class MusicDownloader:
                 return
             self._run_id += 1
             run_id = self._run_id
+            self._set_remove_buttons(False)
 
             self.download_button.pack_forget()
             self.cancel_button.pack(fill="x", expand=True)
@@ -1751,6 +1758,7 @@ class MusicDownloader:
 
         self._run_id += 1
         self.downloading = True
+        self._set_remove_buttons(False)
         self.status_label.configure(text="")  # Clear old status
         self.progress_frame.pack(fill="x", padx=20, pady=(10, 0))
 
@@ -2184,6 +2192,7 @@ class MusicDownloader:
     def reset_ui(self, keep_status=False):
         """Reset UI after download completes/cancels (keep_status: leave the final result message visible)"""
         self.downloading = False
+        self._set_remove_buttons(True)
         self.current_download_index = -1  # Reset queue index
         self.cancel_button.pack_forget()
 
@@ -2812,17 +2821,27 @@ class MusicDownloader:
             self.close_app()
 
     @staticmethod
-    def _stop_process(proc):
-        """Stop a yt-dlp process and its children (ffmpeg): it runs in its own group."""
+    def _stop_process(proc, wait=1.0):
+        """Stop a yt-dlp process and its children (ffmpeg): it runs in its own group.
+
+        Waits (up to `wait` s, usually a few ms) until it has ended, and kills it if it
+        has not, so a new download never runs next to one that is still stopping."""
         if proc is None or proc.poll() is not None:
             return
-        try:
-            os.killpg(proc.pid, signal.SIGTERM)
-        except Exception:
+
+        def send(sig):
             try:
-                proc.terminate()
+                os.killpg(proc.pid, sig)
             except Exception:
-                pass
+                try:
+                    proc.send_signal(sig)
+                except Exception:
+                    pass
+        send(signal.SIGTERM)
+        try:
+            proc.wait(timeout=wait)
+        except Exception:
+            send(signal.SIGKILL)
 
     def close_app(self):
         """Close the app. Always works: if destroying the window fails, exit anyway."""
