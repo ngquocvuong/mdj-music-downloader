@@ -8,6 +8,7 @@ import sys
 import shutil
 import queue
 import webbrowser
+import tkinter as tk
 import re
 import tempfile
 from datetime import datetime
@@ -605,7 +606,9 @@ class MusicDownloader:
         )
         support_btn.pack(fill="x")
 
-        # Status label (left column, after settings)
+        # Status line (left column, after settings). Normal messages use status_label;
+        # "Saved to" results swap in status_text, where only the folder path is clickable.
+        self._status_pack = dict(fill="x", padx=10, pady=(10, 0))
         self.status_label = ctk.CTkLabel(
             left_frame,
             text="",
@@ -614,7 +617,7 @@ class MusicDownloader:
             text_color=("#666666", "#888888"),
             height=30
         )
-        self.status_label.pack(fill="x", padx=10, pady=(10, 0))
+        self.status_label.pack(**self._status_pack)
         self._setup_status_link()
 
         # === RIGHT COLUMN CONTENT ===
@@ -845,7 +848,7 @@ class MusicDownloader:
                         text="✓ Download complete!",
                         text_color="#4caf50"
                     ))
-                    self.show_saved_status(f"Saved to: {msg_data}", "#4caf50", msg_data)
+                    self.show_saved_status("Saved to: ", msg_data, "#4caf50")
                     self._keep_status = True  # don't let the following "reset" clear it
                 elif msg_type == "error":
                     self.progress_bar.stop()
@@ -879,33 +882,98 @@ class MusicDownloader:
         # Check queue again after 100ms
         self.root.after(100, self.check_queue)
 
-    # ---- clickable "Saved to:" status line ----
+    # ---- "Saved to:" status line with a clickable folder path ----
     def _setup_status_link(self):
         self._status_link_dir = None
         self._status_link_text = None
+        bg = self.status_label._apply_appearance_mode(self.status_label.cget("bg_color"))
         self._status_font = ctk.CTkFont(size=9)
-        self._status_font_link = ctk.CTkFont(size=9, underline=True)
+        self.status_text = tk.Text(
+            self.status_label.master, height=1, wrap="word", font=self._status_font,
+            bg=bg, relief="flat", borderwidth=0, highlightthickness=0, padx=0, pady=6,
+            cursor="arrow", takefocus=0, insertwidth=0,
+            selectbackground=bg, inactiveselectbackground=bg, exportselection=False)
+        self.status_text.tag_configure("all", justify="center")
+        self.status_text.tag_configure("link", underline=False)
+        self.status_text.tag_bind("link", "<Enter>", self._on_link_enter)
+        self.status_text.tag_bind("link", "<Leave>", self._on_link_leave)
+        self.status_text.tag_bind("link", "<Button-1>", self._on_link_click)
+        self._fit_pending = False
+        self.status_text.bind("<Configure>", lambda e: self._schedule_fit_status_text())
+        self.status_text.configure(state="disabled")
+
         original_configure = self.status_label.configure
 
         def configure(*args, **kwargs):
-            # Any other text written to the status line turns the link off
+            # Any other text written to the status line turns the "Saved to" view off
             if "text" in kwargs and self._status_link_dir and kwargs["text"] != self._status_link_text:
-                self._status_link_dir = self._status_link_text = None
-                original_configure(font=self._status_font, cursor="")
+                self._hide_saved_status()
             return original_configure(*args, **kwargs)
 
+        self._status_label_configure = original_configure
         self.status_label.configure = configure
-        self.status_label.bind("<Button-1>", self._on_status_click)
 
-    def show_saved_status(self, text, color, folder):
-        """Show a result message; clicking it opens `folder` in the file manager."""
-        self.status_label.configure(text=text, text_color=color)
+    def show_saved_status(self, before, folder, color, after=""):
+        """Show `before + folder + after`; only `folder` is clickable (underlined on hover) and opens it."""
+        text = before + folder + after
+        self._status_label_configure(text=text, text_color=color)  # keep label text in sync (cget / tests)
         self._status_link_dir, self._status_link_text = folder, text
-        self.status_label.configure(font=self._status_font_link, cursor="hand2")
+        st = self.status_text
+        st.configure(state="normal")
+        st.delete("1.0", "end")
+        st.insert("end", before, ("all",))
+        st.insert("end", folder, ("all", "link"))
+        st.insert("end", after, ("all",))
+        st.configure(state="disabled", fg=color)
+        st.tag_configure("link", underline=False)
+        if not st.winfo_manager():
+            st.pack(after=self.status_label, **self._status_pack)  # same spot as the label
+        self.status_label.pack_forget()
+        self._schedule_fit_status_text()
 
-    def _on_status_click(self, event=None):
+    def _hide_saved_status(self):
+        self._status_link_dir = self._status_link_text = None
+        if not self.status_label.winfo_manager():
+            if self.status_text.winfo_manager():
+                self.status_label.pack(before=self.status_text, **self._status_pack)
+            else:
+                self.status_label.pack(**self._status_pack)
+        self.status_text.pack_forget()
+        self.status_text.configure(cursor="arrow")
+
+    def _schedule_fit_status_text(self):
+        # Run once, after Tk has finished laying out (never from inside a <Configure> callback,
+        # since changing the height fires <Configure> again).
+        if not self._fit_pending:
+            self._fit_pending = True
+            self.root.after_idle(self._fit_status_text)
+
+    def _fit_status_text(self):
+        """Grow/shrink the text box to the number of wrapped lines."""
+        self._fit_pending = False
+        try:
+            if self.status_text.winfo_width() <= 1:
+                return  # not laid out yet; <Configure> will call us again with the real width
+            # Counting to "end" (not "end-1c") gives the number of lines, not the number of line breaks
+            n = self.status_text.count("1.0", "end", "displaylines")
+            n = n[0] if isinstance(n, tuple) else n
+            n = max(1, int(n or 1))
+            if int(self.status_text.cget("height")) != n:  # only when it changes, so no resize loop
+                self.status_text.configure(height=n)
+        except tk.TclError:
+            pass
+
+    def _on_link_enter(self, event=None):
+        self.status_text.tag_configure("link", underline=True)
+        self.status_text.configure(cursor="hand2")
+
+    def _on_link_leave(self, event=None):
+        self.status_text.tag_configure("link", underline=False)
+        self.status_text.configure(cursor="arrow")
+
+    def _on_link_click(self, event=None):
         folder = self._status_link_dir
-        if not folder or self.status_label.cget("text") != self._status_link_text:
+        if not folder:
             return
         if not os.path.isdir(folder):
             TooltipNotification(self.root, "⚠ Folder no longer exists")
@@ -928,7 +996,9 @@ class MusicDownloader:
         frozen = getattr(sys, 'frozen', False)
         if version:
             debug(f"yt-dlp version check OK: {version} ({path})")
-            self.status_label.configure(text=f"v{APP_VERSION}", text_color=("#666666", "#888888"))
+            # All good: don't overwrite a download in progress or a result the user is reading
+            if not self.downloading and not self._status_link_dir:
+                self.status_label.configure(text=f"v{APP_VERSION}", text_color=("#666666", "#888888"))
         elif not exists:
             self.status_label.configure(
                 text=("⚠ yt-dlp missing! Click 'Update yt-dlp' or reinstall the application" if frozen
@@ -1498,11 +1568,10 @@ class MusicDownloader:
         saved_dirs = list(getattr(self, "_queue_saved_dirs", []))  # folders used in this run
 
         summary = f"Queue complete: {done_count} downloaded, {failed_count} failed"
-        if saved_dirs:
-            summary += f"\nSaved to: {saved_dirs[0]}" + (f" (+{len(saved_dirs) - 1} more)" if len(saved_dirs) > 1 else "")
         color = "#4caf50" if failed_count == 0 else "#ff9800"
         if saved_dirs:
-            self.show_saved_status(summary, color, saved_dirs[0])
+            more = f" (+{len(saved_dirs) - 1} more)" if len(saved_dirs) > 1 else ""
+            self.show_saved_status(summary + "\nSaved to: ", saved_dirs[0], color, more)
         else:
             self.status_label.configure(text=summary, text_color=color)
         self._keep_status = True  # don't let the following "reset" clear it
