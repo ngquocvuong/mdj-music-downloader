@@ -11,6 +11,7 @@
 - Long URLs in the queue are shortened with "..." instead of squeezing the X button.
 - "Supported Sites" moved to a small **?** next to "Video/Audio URL", so the progress bar and messages are no longer cut off at the bottom.
 - **New look:** teal colours matching the MDJ icon, a switch for Audio / Video, and light-yellow tooltips.
+- **No more "frozen" moments:** Supported Sites and yt-dlp Settings open straight away with a "Loading..." message instead of freezing the app for a couple of seconds.
 - **Modern folder and file chooser:** Output Folder, Export and Import now open your desktop's own file chooser.
 
 ### v1.0.2

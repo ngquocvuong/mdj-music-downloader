@@ -196,6 +196,30 @@ def _apply_brand_theme():
 _apply_brand_theme()
 
 
+def _speed_up_ctk_scrollbars():
+    """CustomTkinter's scrollbar forces a full redraw of the whole app (update_idletasks)
+    every time it is drawn. Windows with scrollbars then took 1-2 s to open. Tk redraws
+    by itself a moment later anyway, so skip that forced redraw."""
+    original = ctk.CTkScrollbar._draw
+    if getattr(original, "_mdj_fast", False):
+        return
+
+    def _draw(self, *args, **kwargs):
+        canvas = getattr(self, "_canvas", None)
+        if canvas is None:
+            return original(self, *args, **kwargs)
+        canvas.update_idletasks = lambda: None      # instance attribute hides the method
+        try:
+            return original(self, *args, **kwargs)
+        finally:
+            del canvas.update_idletasks
+    _draw._mdj_fast = True
+    ctk.CTkScrollbar._draw = _draw
+
+
+_speed_up_ctk_scrollbars()
+
+
 class RoundIconButton(ctk.CTkButton):
     """CTkButton that can be a true circle: CTk reserves corner_radius-wide side columns
     around the text, so a 20px "?" would otherwise become 28px wide (an oval)."""
@@ -1129,7 +1153,12 @@ class MusicDownloader:
             path, version = self._resolve_ytdlp()
             self._ytdlp_cache = (path, version)
             exists = os.path.exists(path) or shutil.which(path)
-            self.root.after(0, lambda: self._show_ytdlp_status(path, version, exists))
+            try:
+                self.root.after(0, lambda: self._show_ytdlp_status(path, version, exists))
+                # Preload the Supported Sites list quietly, so "?" opens instantly
+                self.root.after(500, lambda: version and self.fetch_supported_sites())
+            except RuntimeError:            # window closed before the check finished
+                pass
         threading.Thread(target=worker, daemon=True).start()
 
     def _show_ytdlp_status(self, path, version, exists):
@@ -2096,64 +2125,145 @@ class MusicDownloader:
         except Exception as e:
             TooltipNotification(self.root, f"Could not open browser: {e}")
 
-    def show_supported_sites(self):
+    def after_shown(self, win, fn):
+        """Run fn once win is on screen and painted, so the user sees the window
+        (with its "Loading..." text) before slow work starts."""
+        done = []
+
+        def run():
+            if not win.winfo_exists():
+                return
+            # Tk runs timers before idle redraws, so draw the window now; otherwise the
+            # slow work starts first and the user sees an empty grey window.
+            win.update_idletasks()
+            win.after(40, lambda: win.winfo_exists() and fn())
+
+        def go(*_):
+            if not done:
+                done.append(True)
+                win.after(20, run)
+        if win.winfo_ismapped():        # center_dialog() usually maps it already
+            go()
+        else:
+            win.bind("<Map>", go, add="+")
+            win.bind("<Expose>", go, add="+")   # Map is not always reported for toplevels
+            win.after(400, go)          # in case neither event arrives
+
+    def _ytdlp_cache_key(self):
+        path = self.get_yt_dlp_path()
         try:
-            result = subprocess.run(
-                [self.get_yt_dlp_path(), "--extractor-descriptions"],
-                capture_output=True,
-                text=True
-            )
-            sites = result.stdout.strip().split("\n")
+            return (path, os.path.getmtime(path))
+        except OSError:
+            return (path, None)
 
-            sites_window = ctk.CTkToplevel(self.root)
-            sites_window.title("Supported Sites")
-            self.center_dialog(sites_window, 500, 500)
+    def fetch_supported_sites(self, callback=None):
+        """Get yt-dlp's site list in a background thread (takes 1-5 s); cached afterwards.
 
-            frame = ctk.CTkFrame(sites_window, corner_radius=15)
-            frame.pack(expand=True, fill="both", padx=15, pady=15)
+        callback(sites, error) runs on the Tk thread. The list is re-read after yt-dlp is updated."""
+        key = self._ytdlp_cache_key()
+        cache = getattr(self, "_sites_cache", None)
+        if cache and cache[0] == key:
+            if callback:
+                callback(cache[1], None)
+            return
+        waiting = getattr(self, "_sites_waiting", None)
+        if waiting is not None:             # a fetch is already running: just wait for it
+            if callback:
+                waiting.append(callback)
+            return
+        self._sites_waiting = [callback] if callback else []
 
-            title = ctk.CTkLabel(
-                frame,
-                text="Supported Sites",
-                font=ctk.CTkFont(size=20)
-            )
-            title.pack(pady=(10, 15))
+        def worker():
+            sites, error = None, None
+            try:
+                r = subprocess.run([key[0], "--extractor-descriptions"],
+                                   capture_output=True, text=True, timeout=60)
+                sites = [line for line in r.stdout.splitlines() if line.strip()]
+                if not sites:
+                    error = (r.stderr.strip().splitlines() or ["yt-dlp returned no sites"])[-1]
+            except Exception as ex:          # not found, timed out, ...
+                error = str(ex)
 
-            search_label = ctk.CTkLabel(frame, text="Search:", font=ctk.CTkFont(size=13))
-            search_label.pack(anchor="w", padx=20, pady=(0, 5))
+            def deliver():
+                if sites:
+                    self._sites_cache = (key, sites)
+                callbacks, self._sites_waiting = self._sites_waiting, None
+                for cb in callbacks:
+                    cb(sites, error)
+            try:
+                self.root.after(0, deliver)
+            except RuntimeError:            # window already closed
+                pass
+        threading.Thread(target=worker, daemon=True).start()
 
-            search_var = ctk.StringVar()
-            search_entry = ctk.CTkEntry(
-                frame,
-                textvariable=search_var,
-                placeholder_text="Type to filter...",
-                height=35
-            )
-            search_entry.pack(fill="x", padx=20, pady=(0, 10))
+    def show_supported_sites(self):
+        win = getattr(self, "_sites_window", None)
+        if win is not None and win.winfo_exists():      # already open: bring it to the front
+            win.deiconify(); win.lift(); win.focus_force()
+            return
 
+        sites_window = ctk.CTkToplevel(self.root)
+        self._sites_window = sites_window
+        sites_window.title("Supported Sites")
+        self.center_dialog(sites_window, 500, 500)
+
+        frame = ctk.CTkFrame(sites_window, corner_radius=15)
+        frame.pack(expand=True, fill="both", padx=15, pady=15)
+
+        title = ctk.CTkLabel(frame, text="Supported Sites", font=ctk.CTkFont(size=20))
+        title.pack(pady=(10, 15))
+
+        search_label = ctk.CTkLabel(frame, text="Search:", font=ctk.CTkFont(size=13))
+        search_label.pack(anchor="w", padx=20, pady=(0, 5))
+
+        search_var = ctk.StringVar()
+        search_entry = ctk.CTkEntry(frame, textvariable=search_var,
+                                    placeholder_text="Type to filter...", height=35)
+        search_entry.pack(fill="x", padx=20, pady=(0, 10))
+
+        # Shown while yt-dlp is listing the sites
+        loading = ctk.CTkFrame(frame, fg_color="transparent")
+        loading.pack(expand=True, fill="both", padx=20, pady=(0, 10))
+        loading_label = ctk.CTkLabel(loading, text="Loading supported sites...",
+                                     font=ctk.CTkFont(size=13))
+        loading_label.pack(pady=(110, 10))
+        loading_bar = ctk.CTkProgressBar(loading, mode="indeterminate", width=220)
+        loading_bar.pack()
+        loading_bar.start()
+
+        close_btn = ctk.CTkButton(frame, text="Close", command=sites_window.destroy, height=35)
+        close_btn.pack(side="bottom", pady=(0, 10), padx=20, fill="x")
+
+        def show_list(sites, error):
+            if not sites_window.winfo_exists():
+                return
+            loading_bar.stop()
+            if error:
+                loading_bar.pack_forget()
+                loading_label.configure(text=f"Could not load the list of sites.\n\n{error}",
+                                        text_color="#f44336", wraplength=380)
+                return
+            loading.destroy()
             text_area = ctk.CTkTextbox(frame, wrap="word", font=ctk.CTkFont(size=12))
+            count_label = ctk.CTkLabel(frame, text="", font=ctk.CTkFont(size=11),
+                                       text_color=("#666666", "#888888"))
+
+            def update_text_area(*_):
+                term = search_var.get().lower()
+                shown = [x for x in sites if term in x.lower()]
+                text_area.configure(state="normal")
+                text_area.delete("1.0", "end")
+                text_area.insert("1.0", "\n".join(shown))     # one insert: fast
+                text_area.configure(state="disabled")
+                count_label.configure(text=f"{len(shown)} of {len(sites)} sites" if term
+                                      else f"{len(sites)} sites")
+            search_var.trace_add("write", update_text_area)
+            update_text_area()                  # fill before showing (faster)
+            count_label.pack(before=close_btn, side="bottom", pady=(0, 6))
             text_area.pack(expand=True, fill="both", padx=20, pady=(0, 10))
 
-            def update_text_area(*args):
-                text_area.delete("1.0", "end")
-                search_term = search_var.get().lower()
-                for site in sites:
-                    if search_term in site.lower():
-                        text_area.insert("end", f"{site}\n")
-
-            search_var.trace("w", update_text_area)
-            update_text_area()
-
-            close_btn = ctk.CTkButton(
-                frame,
-                text="Close",
-                command=sites_window.destroy,
-                height=35
-            )
-            close_btn.pack(pady=(0, 10), padx=20, fill="x")
-
-        except Exception as e:
-            self.show_error_dialog("Error", f"Failed to fetch supported sites: {str(e)}")
+        # Let the window appear first, then fill it (instantly if the list is cached)
+        self.after_shown(sites_window, lambda: self.fetch_supported_sites(show_list))
 
     def show_ytdlp_settings(self):
         """Show yt-dlp settings configuration dialog"""
@@ -2180,135 +2290,151 @@ class MusicDownloader:
         )
         subtitle.pack(pady=(0, 15))
 
-        # Scrollable content
-        content = ctk.CTkScrollableFrame(frame, fg_color="transparent")
-        content.pack(expand=True, fill="both", padx=15, pady=(0, 10))
+        # Show the window straight away with "Loading...", then build the (slow) rest
+        loading = ctk.CTkLabel(frame, text="Loading settings...", font=ctk.CTkFont(size=13),
+                               text_color=("#666666", "#888888"))
+        loading.pack(expand=True)
 
-        cfg = self.ytdlp_config
+        def build_rest():
+            if not settings_window.winfo_exists():
+                return
+            loading.destroy()
 
-        # Audio Quality dropdown
-        audio_qual_label = ctk.CTkLabel(content, text="Audio Quality:", font=ctk.CTkFont(size=13, weight="bold"))
-        audio_qual_label.pack(anchor="w", pady=(5, 5))
+            # Scrollable content
+            # Filled first and put on screen once at the end: its scrollbar forces a full
+            # redraw every time the content grows, which made this window slow to open.
+            content = ctk.CTkScrollableFrame(frame, fg_color="transparent")
 
-        quality_frame = ctk.CTkFrame(content, fg_color="transparent")
-        quality_frame.pack(fill="x", pady=(0, 10))
+            cfg = self.ytdlp_config
 
-        audio_quality_var = ctk.StringVar(value=cfg.get("audio_quality", "0"))
-        quality_options = [
-            ("0 - Best", "0"),
-            ("2 - High (192kbps)", "2"),
-            ("5 - Medium (128kbps)", "5"),
-            ("9 - Low (64kbps)", "9")
-        ]
-        for label, value in quality_options:
-            rb = ctk.CTkRadioButton(
-                quality_frame,
-                text=label,
-                variable=audio_quality_var,
-                value=value,
-                font=ctk.CTkFont(size=12)
+            # Audio Quality dropdown
+            audio_qual_label = ctk.CTkLabel(content, text="Audio Quality:", font=ctk.CTkFont(size=13, weight="bold"))
+            audio_qual_label.pack(anchor="w", pady=(5, 5))
+
+            quality_frame = ctk.CTkFrame(content, fg_color="transparent")
+            quality_frame.pack(fill="x", pady=(0, 10))
+
+            audio_quality_var = ctk.StringVar(value=cfg.get("audio_quality", "0"))
+            quality_options = [
+                ("0 - Best", "0"),
+                ("2 - High (192kbps)", "2"),
+                ("5 - Medium (128kbps)", "5"),
+                ("9 - Low (64kbps)", "9")
+            ]
+            for label, value in quality_options:
+                rb = ctk.CTkRadioButton(
+                    quality_frame,
+                    text=label,
+                    variable=audio_quality_var,
+                    value=value,
+                    font=ctk.CTkFont(size=12)
+                )
+                rb.pack(anchor="w", padx=10, pady=2)
+
+            # Custom Arguments
+            custom_label = ctk.CTkLabel(content, text="Custom Arguments (applied to all downloads):",
+                                       font=ctk.CTkFont(size=13, weight="bold"))
+            custom_label.pack(anchor="w", pady=(15, 5))
+
+            custom_text = ctk.CTkTextbox(content, height=100, font=ctk.CTkFont(size=11),
+                                         activate_scrollbars=False)  # scrollbars are slow to build
+            custom_text.pack(fill="x", pady=(0, 5))
+            custom_text.insert("1.0", "\n".join(cfg.get("custom_args", [])))
+
+            hint1 = ctk.CTkLabel(
+                content,
+                text="Tip: --cookies-from-browser firefox",
+                font=ctk.CTkFont(size=10),
+                text_color=("#888888", "#666666")
             )
-            rb.pack(anchor="w", padx=10, pady=2)
+            hint1.pack(anchor="w", pady=(0, 10))
 
-        # Custom Arguments
-        custom_label = ctk.CTkLabel(content, text="Custom Arguments (applied to all downloads):",
-                                   font=ctk.CTkFont(size=13, weight="bold"))
-        custom_label.pack(anchor="w", pady=(15, 5))
+            # Advanced Settings (collapsible)
+            advanced_label = ctk.CTkLabel(content, text="Advanced Settings:",
+                                         font=ctk.CTkFont(size=13, weight="bold"))
+            advanced_label.pack(anchor="w", pady=(15, 5))
 
-        custom_text = ctk.CTkTextbox(content, height=100, font=ctk.CTkFont(size=11))
-        custom_text.pack(fill="x", pady=(0, 5))
-        custom_text.insert("1.0", "\n".join(cfg.get("custom_args", [])))
+            # Common args
+            common_label = ctk.CTkLabel(content, text="Common Arguments:", font=ctk.CTkFont(size=12))
+            common_label.pack(anchor="w", pady=(5, 5))
+            common_text = ctk.CTkTextbox(content, height=60, font=ctk.CTkFont(size=11),
+                                         activate_scrollbars=False)
+            common_text.pack(fill="x", pady=(0, 10))
+            common_text.insert("1.0", "\n".join(cfg.get("common_args", [])))
 
-        hint1 = ctk.CTkLabel(
-            content,
-            text="Tip: --cookies-from-browser firefox",
-            font=ctk.CTkFont(size=10),
-            text_color=("#888888", "#666666")
-        )
-        hint1.pack(anchor="w", pady=(0, 10))
+            # Video quality
+            video_qual_label = ctk.CTkLabel(content, text="Video Quality Format:", font=ctk.CTkFont(size=12))
+            video_qual_label.pack(anchor="w", pady=(5, 5))
+            video_qual_text = ctk.CTkEntry(content, font=ctk.CTkFont(size=11))
+            video_qual_text.pack(fill="x", pady=(0, 10))
+            video_qual_text.insert(0, cfg.get("video_quality", ""))
 
-        # Advanced Settings (collapsible)
-        advanced_label = ctk.CTkLabel(content, text="Advanced Settings:",
-                                     font=ctk.CTkFont(size=13, weight="bold"))
-        advanced_label.pack(anchor="w", pady=(15, 5))
+            # Buttons
+            button_frame = ctk.CTkFrame(frame, fg_color="transparent")
+            button_frame.pack(fill="x", padx=15, pady=(0, 10))
 
-        # Common args
-        common_label = ctk.CTkLabel(content, text="Common Arguments:", font=ctk.CTkFont(size=12))
-        common_label.pack(anchor="w", pady=(5, 5))
-        common_text = ctk.CTkTextbox(content, height=60, font=ctk.CTkFont(size=11))
-        common_text.pack(fill="x", pady=(0, 10))
-        common_text.insert("1.0", "\n".join(cfg.get("common_args", [])))
+            def reset_defaults():
+                if messagebox.askyesno("Reset Settings",
+                                      "Reset all yt-dlp settings to defaults?"):
+                    self.ytdlp_config = self.get_default_ytdlp_config()
+                    self.save_config()
+                    settings_window.destroy()
+                    TooltipNotification(self.root, "✓ Settings reset to defaults", 2000)
 
-        # Video quality
-        video_qual_label = ctk.CTkLabel(content, text="Video Quality Format:", font=ctk.CTkFont(size=12))
-        video_qual_label.pack(anchor="w", pady=(5, 5))
-        video_qual_text = ctk.CTkEntry(content, font=ctk.CTkFont(size=11))
-        video_qual_text.pack(fill="x", pady=(0, 10))
-        video_qual_text.insert(0, cfg.get("video_quality", ""))
+            def save_settings():
+                # Parse custom args
+                custom_args_text = custom_text.get("1.0", "end").strip()
+                custom_args = [line.strip() for line in custom_args_text.split("\n") if line.strip()]
 
-        # Buttons
-        button_frame = ctk.CTkFrame(frame, fg_color="transparent")
-        button_frame.pack(fill="x", padx=15, pady=(0, 10))
+                # Parse common args
+                common_args_text = common_text.get("1.0", "end").strip()
+                common_args = [line.strip() for line in common_args_text.split("\n") if line.strip()]
 
-        def reset_defaults():
-            if messagebox.askyesno("Reset Settings",
-                                  "Reset all yt-dlp settings to defaults?"):
-                self.ytdlp_config = self.get_default_ytdlp_config()
+                # Update config
+                self.ytdlp_config["audio_quality"] = audio_quality_var.get()
+                self.ytdlp_config["custom_args"] = custom_args
+                self.ytdlp_config["common_args"] = common_args if common_args else ["--ignore-config"]
+                self.ytdlp_config["video_quality"] = video_qual_text.get().strip()
+
+                # Save to file
                 self.save_config()
                 settings_window.destroy()
-                TooltipNotification(self.root, "✓ Settings reset to defaults", 2000)
+                TooltipNotification(self.root, "✓ Settings saved successfully", 2000)
 
-        def save_settings():
-            # Parse custom args
-            custom_args_text = custom_text.get("1.0", "end").strip()
-            custom_args = [line.strip() for line in custom_args_text.split("\n") if line.strip()]
+            reset_btn = ctk.CTkButton(
+                button_frame,
+                text="Reset to Defaults",
+                command=reset_defaults,
+                height=35,
+                fg_color="#8B4545",
+                hover_color="#6B3535",
+                text_color=LIGHT_TEXT
+            )
+            reset_btn.pack(side="left", expand=True, fill="x", padx=(0, 5))
 
-            # Parse common args
-            common_args_text = common_text.get("1.0", "end").strip()
-            common_args = [line.strip() for line in common_args_text.split("\n") if line.strip()]
+            save_btn = ctk.CTkButton(
+                button_frame,
+                text="Save Settings",
+                command=save_settings,
+                height=35,
+                fg_color=ACCENT
+            )
+            save_btn.pack(side="left", expand=True, fill="x", padx=(5, 0))
 
-            # Update config
-            self.ytdlp_config["audio_quality"] = audio_quality_var.get()
-            self.ytdlp_config["custom_args"] = custom_args
-            self.ytdlp_config["common_args"] = common_args if common_args else ["--ignore-config"]
-            self.ytdlp_config["video_quality"] = video_qual_text.get().strip()
+            cancel_btn = ctk.CTkButton(
+                frame,
+                text="Cancel",
+                command=settings_window.destroy,
+                height=35,
+                fg_color="transparent",
+                border_width=1,
+                text_color=LIGHT_TEXT,
+                hover_color=ACCENT_DIM
+            )
+            cancel_btn.pack(fill="x", padx=15, pady=(0, 10))
+            content.pack(expand=True, fill="both", padx=15, pady=(0, 10), before=button_frame)
 
-            # Save to file
-            self.save_config()
-            settings_window.destroy()
-            TooltipNotification(self.root, "✓ Settings saved successfully", 2000)
-
-        reset_btn = ctk.CTkButton(
-            button_frame,
-            text="Reset to Defaults",
-            command=reset_defaults,
-            height=35,
-            fg_color="#8B4545",
-            hover_color="#6B3535",
-            text_color=LIGHT_TEXT
-        )
-        reset_btn.pack(side="left", expand=True, fill="x", padx=(0, 5))
-
-        save_btn = ctk.CTkButton(
-            button_frame,
-            text="Save Settings",
-            command=save_settings,
-            height=35,
-            fg_color=ACCENT
-        )
-        save_btn.pack(side="left", expand=True, fill="x", padx=(5, 0))
-
-        cancel_btn = ctk.CTkButton(
-            frame,
-            text="Cancel",
-            command=settings_window.destroy,
-            height=35,
-            fg_color="transparent",
-            border_width=1,
-            text_color=LIGHT_TEXT,
-            hover_color=ACCENT_DIM
-        )
-        cancel_btn.pack(fill="x", padx=15, pady=(0, 10))
+        self.after_shown(settings_window, build_rest)
 
     def update_ytdlp(self):
         """Update yt-dlp to the latest version"""

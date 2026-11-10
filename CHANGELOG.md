@@ -20,6 +20,8 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 - Output Folder, Export and Import now use your desktop's own modern file chooser (with sidebar, bookmarks and breadcrumbs) instead of the old-style Tk dialog. The old dialog is still used if no system chooser is available.
 
 ### Fixed
+- Clicking **?** (Supported Sites) froze the app for about 2 seconds with nothing on screen. The window now opens immediately with "Loading supported sites..." and a progress bar; the list is loaded in the background, preloaded shortly after startup, and kept for next time. Search is faster and shows how many sites match.
+- yt-dlp Settings opened about twice as fast, and shows "Loading settings..." straight away instead of a frozen app.
 - After a queue finished, the result message was cleared straight away. It now stays and shows where the files were saved, e.g. "Queue complete: 3 downloaded, 0 failed / Saved to: ~/Music/My Album" (including the Album/Folder subfolder).
 - Queue summary counted songs finished in an earlier run; it now counts only the current run.
 - Long URLs in the queue squeezed the X (remove) button. The URL is now shortened with "..." to fit the space, and re-fits when the window is resized; the X button keeps its size.
