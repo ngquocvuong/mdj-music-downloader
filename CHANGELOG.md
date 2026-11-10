@@ -7,6 +7,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 ## [1.0.3] - 2026-11-09
 
 ### Added
+- "Supported Sites" is now a small blue **?** button next to "Video/Audio URL" (with a "Supported sites" tooltip), freeing room in the left panel.
 - Click the folder path after "Saved to:" to open it in your file manager (underlined when the mouse is over it) — for single downloads and queues, including the Album/Folder subfolder.
 - "Update yt-dlp" works for every user on a shared computer: with an administrator password it updates yt-dlp for all users; without one (or if the password prompt is cancelled) it updates it just for that user, in `~/.local/share/mdj-music-downloader/`. The app always uses the newest working copy.
 - "Already up to date" check, so no password is asked for when there is nothing to update.
@@ -17,6 +18,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 - Long URLs in the queue squeezed the X (remove) button. The URL is now shortened with "..." to fit the space, and re-fits when the window is resized; the X button keeps its size.
 - The left and right panels no longer change width when a download finishes; they keep the size the app opens with.
 - The top border of the left panel was hidden behind the "Video/Audio URL" row; it is now fully visible.
+- The download progress bar and messages were cut off at the bottom of the left panel during and after downloads.
 - Updating yt-dlp asked for the administrator password twice; now once.
 - Opening the browser (Support Development) or file manager from the installed app now uses the system's own libraries instead of the app's bundled ones, which could make them fail to start.
 - Updating failed for a second user on the same computer (shared temporary file in /tmp).

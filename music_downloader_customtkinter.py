@@ -121,6 +121,56 @@ ctk.set_appearance_mode("dark")
 ctk.set_default_color_theme("blue")
 
 
+class RoundIconButton(ctk.CTkButton):
+    """CTkButton that can be a true circle: CTk reserves corner_radius-wide side columns
+    around the text, so a 20px "?" would otherwise become 28px wide (an oval)."""
+    def _create_grid(self):
+        super()._create_grid()
+        for col in (0, 4):
+            self.grid_columnconfigure(col, minsize=0)
+
+
+class HoverTip:
+    """Small tooltip shown while the mouse rests on a widget."""
+    def __init__(self, widget, text, delay=400):
+        self.widget, self.text, self.delay = widget, text, delay
+        self._after = None
+        self._tip = None
+        widget.bind("<Enter>", self._schedule, add="+")
+        widget.bind("<Leave>", self._hide, add="+")
+        # Same sequence the button itself uses: Tk runs only the most specific binding, so a
+        # generic "<ButtonPress>" would be skipped in favour of the button's "<Button-1>".
+        widget.bind("<Button-1>", self._hide, add="+")
+
+    def _schedule(self, event=None):
+        self._cancel()
+        self._after = self.widget.after(self.delay, self._show)
+
+    def _cancel(self):
+        if self._after:
+            self.widget.after_cancel(self._after)
+            self._after = None
+
+    def _show(self):
+        self._after = None
+        if self._tip or not self.widget.winfo_exists():
+            return
+        import tkinter as _tk
+        x = self.widget.winfo_rootx() + self.widget.winfo_width() + 6
+        y = self.widget.winfo_rooty() - 2
+        self._tip = tip = _tk.Toplevel(self.widget)
+        tip.wm_overrideredirect(True)
+        tip.wm_geometry(f"+{x}+{y}")
+        _tk.Label(tip, text=self.text, bg="#333333", fg="white", padx=6, pady=2,
+                  font=("TkDefaultFont", 9), relief="solid", borderwidth=1).pack()
+
+    def _hide(self, event=None):
+        self._cancel()
+        if self._tip:
+            self._tip.destroy()
+            self._tip = None
+
+
 class TooltipNotification:
     def __init__(self, parent, message, duration=2000):
         self.tooltip = ctk.CTkToplevel(parent)
@@ -270,7 +320,7 @@ class MusicDownloader:
         elif "unsupported url" in stderr_lower or "no suitable extractor" in stderr_lower:
             return ("Unsupported URL.\n\n"
                     "This website is not supported.\n"
-                    "Click 'Supported Sites' to see the list of supported websites.")
+                    "Click the blue ? next to 'Video/Audio URL' to see the list of supported websites.")
 
         elif "http error 403" in stderr_lower or "forbidden" in stderr_lower:
             return ("Access denied (403 error).\n\n"
@@ -388,13 +438,28 @@ class MusicDownloader:
         debug("URL frame packed")
 
         debug("Creating URL label...")
+        url_header = ctk.CTkFrame(self.url_frame, fg_color="transparent")
+        url_header.pack(fill="x", pady=(0, 5))
         url_label = ctk.CTkLabel(
-            self.url_frame,
+            url_header,
             text="Video/Audio URL:",
             font=ctk.CTkFont(size=13)
         )
         debug("URL label created")
-        url_label.pack(anchor="w", pady=(0, 5))
+        url_label.pack(side="left")
+        # Small round "?" = Supported Sites (replaces the full-width button to save space)
+        self.sites_help_btn = RoundIconButton(
+            url_header,
+            text="?",
+            width=20, height=20, corner_radius=10, border_spacing=0,
+            font=ctk.CTkFont(size=12, weight="bold"),
+            fg_color=("#3b8ed0", "#1f6aa5"),
+            hover_color=("#36719f", "#144870"),
+            text_color="white",
+            command=self.show_supported_sites
+        )
+        self.sites_help_btn.pack(side="left", padx=(6, 0))
+        HoverTip(self.sites_help_btn, "Supported sites")
         debug("URL label packed - CRITICAL POINT")
 
         debug("About to create entry_container...")
@@ -558,17 +623,6 @@ class MusicDownloader:
             border_width=1
         )
         settings_btn.pack(fill="x", pady=(0, 5))
-
-        help_btn = ctk.CTkButton(
-            settings_frame,
-            text="Supported Sites",
-            command=self.show_supported_sites,
-            height=32,
-            font=ctk.CTkFont(size=11),
-            fg_color="transparent",
-            border_width=1
-        )
-        help_btn.pack(fill="x", pady=(0, 5))
 
         # yt-dlp Settings button
         ytdlp_settings_btn = ctk.CTkButton(

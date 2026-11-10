@@ -9,6 +9,7 @@
 - **Click the folder path after "Saved to:" to open it** in your file manager.
 - The queue summary counts only the songs from the current run.
 - Long URLs in the queue are shortened with "..." instead of squeezing the X button.
+- "Supported Sites" moved to a small blue **?** next to "Video/Audio URL", so the progress bar and messages are no longer cut off at the bottom.
 
 ### v1.0.2
 - **Fixed:** downloads failed with "yt-dlp error! Please reinstall the application" on Ubuntu 22.04, Linux Mint 21 and other systems with Python older than 3.11. The app now ships yt-dlp's standalone build, which includes its own Python. **Please update if you installed v1.0.0 or v1.0.1.**
@@ -186,7 +187,7 @@ When reporting issues, please include:
 - Check error message guidance first
 - Verify internet connection
 - Try updating yt-dlp
-- Check supported sites list in the app
+- Check the supported sites list in the app (blue **?** next to "Video/Audio URL")
 
 ---
 
