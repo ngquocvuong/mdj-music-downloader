@@ -9,6 +9,7 @@ import shutil
 import queue
 import webbrowser
 import tkinter as tk
+import tkinter.font as tkfont
 import re
 import tempfile
 from datetime import datetime
@@ -1079,17 +1080,8 @@ class MusicDownloader:
         )
         status_label.pack(side="left", padx=(0, 5))
 
-        url_text = item['url']
-        if len(url_text) > 50:
-            url_text = url_text[:47] + "..."
-        url_label = ctk.CTkLabel(
-            top_row,
-            text=url_text,
-            font=ctk.CTkFont(size=11),
-            anchor="w"
-        )
-        url_label.pack(side="left", fill="x", expand=True)
-
+        # Pack the X button BEFORE the URL: when space is short, Tk shrinks the widgets
+        # packed last, so the URL (not the button) gives way.
         remove_btn = ctk.CTkButton(
             top_row,
             text="X",
@@ -1101,6 +1093,20 @@ class MusicDownloader:
             font=ctk.CTkFont(size=14)
         )
         remove_btn.pack(side="right", padx=5)
+
+        url_label = ctk.CTkLabel(
+            top_row,
+            text="",
+            font=ctk.CTkFont(size=11),
+            anchor="w",
+            width=1  # don't let the text's natural width push the row wider
+        )
+        url_label.pack(side="left", fill="x", expand=True)
+        url_label._full_text = item['url']
+        url_label._shown_text = None
+        top_row.bind("<Configure>", lambda e, lbl=url_label, row=top_row, st=status_label, btn=remove_btn:
+                     self._fit_url_label(lbl, row, st, btn))
+        self.root.after_idle(lambda: self._fit_url_label(url_label, top_row, status_label, remove_btn))
 
         progress_bar = ctk.CTkProgressBar(
             item_frame,
@@ -1117,6 +1123,38 @@ class MusicDownloader:
             'remove_btn': remove_btn,
             'progress_bar': progress_bar
         }
+
+    @staticmethod
+    def _truncate_to_width(text, font, max_px, ellipsis="..."):
+        """Longest prefix of `text` that fits in `max_px` pixels, ending with `ellipsis` if cut."""
+        if font.measure(text) <= max_px:
+            return text
+        lo, hi = 0, len(text)
+        while lo < hi:  # binary search on the number of characters kept
+            mid = (lo + hi + 1) // 2
+            if font.measure(text[:mid] + ellipsis) <= max_px:
+                lo = mid
+            else:
+                hi = mid - 1
+        return text[:lo] + ellipsis if lo > 0 else ellipsis
+
+    def _fit_url_label(self, label, row, status_label, remove_btn):
+        """Show as much of the URL as fits between the status icon and the X button."""
+        try:
+            if not label.winfo_exists():
+                return
+            row_w = row.winfo_width()
+            if row_w <= 1:
+                return  # not laid out yet; <Configure> will call again
+            # Space left for the URL = row - status icon - X button - their padding
+            avail = row_w - status_label.winfo_reqwidth() - remove_btn.winfo_reqwidth() - 5 - 10 - 8
+            font = tkfont.Font(font=label._label.cget("font"))
+            shown = self._truncate_to_width(label._full_text, font, max(avail, 20))
+            if shown != label._shown_text:  # only touch the label when the text really changes
+                label._shown_text = shown
+                label.configure(text=shown)
+        except tk.TclError:
+            pass
 
     def remove_from_queue(self, index):
         """Remove item from queue"""
