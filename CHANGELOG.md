@@ -7,10 +7,16 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 ## [1.0.3] - 2026-11-09
 
 ### Added
-- "Supported Sites" is now a small blue **?** button next to "Video/Audio URL" (with a "Supported sites" tooltip), freeing room in the left panel.
+- "Supported Sites" is now a small round **?** button next to "Video/Audio URL" (with a "Supported sites" tooltip), freeing room in the left panel.
 - Click the folder path after "Saved to:" to open it in your file manager (underlined when the mouse is over it) — for single downloads and queues, including the Album/Folder subfolder.
 - "Update yt-dlp" works for every user on a shared computer: with an administrator password it updates yt-dlp for all users; without one (or if the password prompt is cancelled) it updates it just for that user, in `~/.local/share/mdj-music-downloader/`. The app always uses the newest working copy.
 - "Already up to date" check, so no password is asked for when there is nothing to update.
+
+### Changed
+- New colour scheme matching the MDJ icon: teal accents (buttons, progress bars, checkbox) with dark navy text on teal buttons, instead of the default blue.
+- "Download Type" is now a two-part switch: the selected type (Audio or Video) is filled teal, the other stays dark.
+- Tooltips and pop-up messages are now classic light yellow with dark text.
+- The header title and subtitle are centred together, with more space above the title.
 
 ### Fixed
 - After a queue finished, the result message was cleared straight away. It now stays and shows where the files were saved, e.g. "Queue complete: 3 downloaded, 0 failed / Saved to: ~/Music/My Album" (including the Album/Folder subfolder).

@@ -121,10 +121,11 @@ ctk.set_appearance_mode("dark")
 ctk.set_default_color_theme("blue")
 
 # Brand colours, taken from the MDJ icon (teal headphones on navy)
-ACCENT = "#35d6c1"          # teal fill for primary buttons, switches, progress
-ACCENT_HOVER = "#2bb3a1"    # slightly darker teal on hover
+ACCENT = "#2bb5a3"          # softer teal for primary buttons, switches, progress
+                            # (the icon teal #35d6c1 is too bright for big areas)
+ACCENT_HOVER = "#249484"    # darker teal on hover
 ACCENT_TEXT = "#17243a"     # navy text on teal (white on teal is hard to read)
-ACCENT_FG = "#35d6c1"       # teal used as a text colour on dark backgrounds
+ACCENT_FG = "#35d6c1"       # brighter icon teal for small text on dark backgrounds
 ACCENT_DIM = "#1f4d49"      # dark teal tint: hover for outline buttons
 LIGHT_TEXT = "#DCE4EE"      # normal light text on dark/coloured buttons
 SWITCH_TRACK = "#1b2023"    # Download Type switch: dark track / unselected half
@@ -358,7 +359,7 @@ class MusicDownloader:
         elif "unsupported url" in stderr_lower or "no suitable extractor" in stderr_lower:
             return ("Unsupported URL.\n\n"
                     "This website is not supported.\n"
-                    "Click the blue ? next to 'Video/Audio URL' to see the list of supported websites.")
+                    "Click the ? next to 'Video/Audio URL' to see the list of supported websites.")
 
         elif "http error 403" in stderr_lower or "forbidden" in stderr_lower:
             return ("Access denied (403 error).\n\n"
