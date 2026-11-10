@@ -386,24 +386,29 @@ class MusicDownloader:
 
         debug("Creating title label...")
         # Title with icon
+        # Title and subtitle sit together as one group, centred vertically
+        header_inner = ctk.CTkFrame(header_frame, fg_color="transparent")
+        header_inner.place(relx=0.5, rely=0.5, anchor="center")
         title_label = ctk.CTkLabel(
-            header_frame,
+            header_inner,
             text="♫  MUSIC DOWNLOADER",
             font=ctk.CTkFont(size=26, weight="bold"),
-            text_color="white"
+            text_color="white",
+            height=32
         )
-        title_label.pack(expand=True)
+        title_label.pack()
         debug("Title label created")
 
         debug("Creating subtitle...")
         # Subtitle
         subtitle_label = ctk.CTkLabel(
-            header_frame,
+            header_inner,
             text="Download audio & video from YouTube and more",
             font=ctk.CTkFont(size=11),
-            text_color=("#999999", "#777777")  # Subtle gray for subtitle
+            text_color=("#999999", "#777777"),  # Subtle gray for subtitle
+            height=16
         )
-        subtitle_label.pack(pady=(0, 8))
+        subtitle_label.pack()
         debug("Subtitle created")
 
         debug("Creating content frame...")
