@@ -198,6 +198,7 @@ ACCENT_DIM = "#1f4d49"      # dark teal tint: hover for outline buttons
 LIGHT_TEXT = "#DCE4EE"      # normal light text on dark/coloured buttons
 SWITCH_TRACK = "#1b2023"    # Download Type switch: dark track / unselected half
 SWITCH_HOVER = "#262d31"
+LEFT_PANEL_WIDTH = 308            # left panel content width (see setup_ui)
 TIP_BG = "#ffffe1"          # classic light-yellow tooltip
 TIP_TEXT = "#1a1a1a"
 
@@ -384,6 +385,7 @@ class MusicDownloader:
         self.message_queue = queue.Queue()
 
         # Download queue system
+        self._ui_calls = queue.Queue()   # work for the Tk thread, see run_in_ui()
         self.download_queue = []  # List of {url, status, widget} dicts
         self.current_download_index = -1
         debug("Data structures initialized")
@@ -554,9 +556,14 @@ class MusicDownloader:
 
         debug("Creating left column...")
         # LEFT COLUMN - Main controls (with border for separation)
+        # Fixed width (308 + 2x10 ipadx = 328 px, the width it always had at launch): its
+        # contents must never resize the panels. Before, e.g. "Download Queue (12)" made
+        # it 3 px wider and "Download" narrower again, leaving buttons drawn clipped.
         left_frame = ctk.CTkFrame(content_frame, fg_color="transparent", border_width=2,
-                                  border_color=("#cccccc", "#444444"), corner_radius=10)
+                                  border_color=("#cccccc", "#444444"), corner_radius=10,
+                                  width=LEFT_PANEL_WIDTH)
         left_frame.pack(side="left", fill="y", padx=(0, 8), ipadx=10, ipady=10)
+        left_frame.pack_propagate(False)
         debug("Left column created")
 
         debug("Creating right column...")
@@ -939,6 +946,7 @@ class MusicDownloader:
 
         # Start queue checking
         self.root.after(100, self.check_queue)
+        self.root.after(50, self._pump_ui_calls)
 
         # Check yt-dlp version
         self.root.after(500, self.check_ytdlp_version)
@@ -971,6 +979,29 @@ class MusicDownloader:
         audio = type_value == "audio"
         self.audio_button.configure(**(on if audio else off))
         self.video_button.configure(**(off if audio else on))
+
+    def run_in_ui(self, fn, *args, **kwargs):
+        """Run fn on the Tk thread. Safe to call from any thread.
+
+        Background threads must never call Tk themselves (not even root.after() or
+        widget.get()): if the Tk thread is busy in update_idletasks() at that moment,
+        both threads wait for each other and the app freezes for good."""
+        self._ui_calls.put((fn, args, kwargs))
+
+    def _pump_ui_calls(self):
+        try:
+            while True:
+                fn, args, kwargs = self._ui_calls.get_nowait()
+                try:
+                    fn(*args, **kwargs)
+                except Exception as e:
+                    debug(f"UI call failed: {e}", level="WARN")
+        except queue.Empty:
+            pass
+        try:
+            self.root.after(50, self._pump_ui_calls)
+        except tk.TclError:             # window closed
+            pass
 
     def check_queue(self):
         """Check message queue from background thread"""
@@ -1128,12 +1159,9 @@ class MusicDownloader:
             path, version = self._resolve_ytdlp()
             self._ytdlp_cache = (path, version)
             exists = os.path.exists(path) or shutil.which(path)
-            try:
-                self.root.after(0, lambda: self._show_ytdlp_status(path, version, exists))
-                # Preload the Supported Sites list quietly, so "?" opens instantly
-                self.root.after(500, lambda: version and self.fetch_supported_sites())
-            except RuntimeError:            # window closed before the check finished
-                pass
+            self.run_in_ui(self._show_ytdlp_status, path, version, exists)
+            if version:                 # preload the Supported Sites list, so "?" opens instantly
+                self.run_in_ui(lambda: self.root.after(500, self.fetch_supported_sites))
         threading.Thread(target=worker, daemon=True).start()
 
     def _show_ytdlp_status(self, path, version, exists):
@@ -1642,7 +1670,8 @@ class MusicDownloader:
                 text_color=("#666666", "#888888")
             )
 
-            threading.Thread(target=self.download_music, args=(url, -1), daemon=True).start()
+            threading.Thread(target=self.download_music, args=(url, -1, self._download_options()),
+                             daemon=True).start()
 
     def process_queue(self):
         """Process all queue items"""
@@ -1686,7 +1715,9 @@ class MusicDownloader:
                     text_color=("#1a8f80", ACCENT_FG)
                 )
 
-                threading.Thread(target=self.download_music, args=(url, self.current_download_index), daemon=True).start()
+                threading.Thread(target=self.download_music,
+                                 args=(url, self.current_download_index, self._download_options()),
+                                 daemon=True).start()
                 return
 
             self.current_download_index += 1
@@ -1964,8 +1995,16 @@ class MusicDownloader:
             # On error, assume video exists (let yt-dlp handle it)
             return True
 
-    def download_music(self, url, queue_index=-1):
-        """Download music from URL"""
+    def _download_options(self):
+        """Settings for a download, read on the Tk thread (the download thread must not touch Tk)."""
+        return {"video": self.download_type.get() == "video",
+                "album": self.album_entry.get().strip(),
+                "number": bool(self.number_tracks_var.get())}
+
+    def download_music(self, url, queue_index=-1, opts=None):
+        """Download music from URL (runs in a background thread)"""
+        if opts is None:
+            opts = self._download_options()
         os.makedirs(self.output_dir, exist_ok=True)
         ytdlp_path = self.get_yt_dlp_path()
 
@@ -1987,8 +2026,8 @@ class MusicDownloader:
             return
 
         # Check if video mode is selected but URL has no video
-        if self.download_type.get() == "video":
-            self.root.after(0, self.progress_label.configure, {"text": "Checking video availability..."})
+        if opts["video"]:
+            self.run_in_ui(self.progress_label.configure, text="Checking video availability...")
             has_video = self.check_has_video(url)
 
             if not has_video:
@@ -2002,16 +2041,16 @@ class MusicDownloader:
                     self.message_queue.put(("reset", None))
                 return
 
-        album_name = self.album_entry.get().strip()
+        album_name = opts["album"]
         download_dir = self.get_album_folder(self.output_dir, album_name)
 
         # Build yt-dlp command from config
-        is_audio = (self.download_type.get() == "audio")
+        is_audio = not opts["video"]
         command = self.build_ytdlp_command(url, download_dir, is_audio=is_audio)
         debug(f"yt-dlp command: {' '.join(command)}")
 
         try:
-            self.root.after(0, self.progress_label.configure, {"text": "Downloading..."})
+            self.run_in_ui(self.progress_label.configure, text="Downloading...")
             self.download_process = subprocess.Popen(
                 command,
                 stdout=subprocess.PIPE,
@@ -2032,7 +2071,7 @@ class MusicDownloader:
                     self.message_queue.put(("error", error_message))
             else:
                 # Apply track numbering if enabled and downloading from queue
-                if self.number_tracks_var.get() and queue_index >= 0:
+                if opts["number"] and queue_index >= 0:
                     try:
                         # Find the most recently created file in download_dir
                         files = [os.path.join(download_dir, f) for f in os.listdir(download_dir) if os.path.isfile(os.path.join(download_dir, f))]
@@ -2165,10 +2204,7 @@ class MusicDownloader:
                 callbacks, self._sites_waiting = self._sites_waiting, None
                 for cb in callbacks:
                     cb(sites, error)
-            try:
-                self.root.after(0, deliver)
-            except RuntimeError:            # window already closed
-                pass
+            self.run_in_ui(deliver)
         threading.Thread(target=worker, daemon=True).start()
 
     def show_supported_sites(self):
@@ -2459,7 +2495,7 @@ class MusicDownloader:
             cancel_btn.configure(text="Close", state="disabled")
 
             def update_thread():
-                ui = lambda fn: self.root.after(0, fn)
+                ui = self.run_in_ui
                 status = lambda text, color=None: ui(lambda: status_label.configure(
                     text=text, **({"text_color": color} if color else {})))
                 finish = lambda: ui(lambda: cancel_btn.configure(text="Close", state="normal"))
@@ -2541,7 +2577,7 @@ class MusicDownloader:
                         status(f"✓ yt-dlp updated to {new_vs} for all users!", "green")
                     else:
                         status(f"✓ yt-dlp updated to {new_vs} for your account.", "green")
-                    self.root.after(500, self.check_ytdlp_version)
+                    ui(lambda: self.root.after(500, self.check_ytdlp_version))
                     finish()
 
                 except subprocess.TimeoutExpired:
@@ -2683,7 +2719,7 @@ class MusicDownloader:
                 height=35,
                 fg_color="#d32f2f",
                 hover_color="#b71c1c",
-                command=lambda: [self.root.destroy(), confirm_window.destroy()],
+                command=self.close_app,
                 text_color=LIGHT_TEXT
             )
             yes_btn.pack(side="left", expand=True, fill="x", padx=(0, 10))
@@ -2696,7 +2732,21 @@ class MusicDownloader:
             )
             no_btn.pack(side="left", expand=True, fill="x")
         else:
+            self.close_app()
+
+    def close_app(self):
+        """Close the app. Always works: if destroying the window fails, exit anyway."""
+        try:
+            proc = getattr(self, "download_process", None)
+            if proc and proc.poll() is None:
+                proc.terminate()            # don't leave yt-dlp running
+        except Exception:
+            pass
+        try:
             self.root.destroy()
+        except Exception as e:
+            log_error(f"Closing the window failed: {e!r}")
+            os._exit(0)
 
     def show_error_dialog(self, title, message):
         error_window = ctk.CTkToplevel(self.root)
@@ -2758,6 +2808,30 @@ def set_window_icon(root):
             root._icon_images = images  # keep references alive
     except Exception as e:
         debug(f"Could not set window icon: {e}", level="WARNING")
+
+
+ERROR_LOG = os.path.join(os.environ.get("XDG_CACHE_HOME") or os.path.expanduser("~/.cache"),
+                         "mdj-music-downloader", "errors.log")
+
+
+def log_error(text):
+    """Append an error to ERROR_LOG (kept small). The installed app has no console, so
+    without this, errors in button handlers etc. would be lost."""
+    try:
+        os.makedirs(os.path.dirname(ERROR_LOG), exist_ok=True)
+        if os.path.exists(ERROR_LOG) and os.path.getsize(ERROR_LOG) > 200_000:
+            os.replace(ERROR_LOG, ERROR_LOG + ".old")
+        with open(ERROR_LOG, "a", encoding="utf-8") as f:
+            f.write(f"[{datetime.now():%Y-%m-%d %H:%M:%S}] v{APP_VERSION}\n{text.rstrip()}\n\n")
+    except Exception:
+        pass
+    debug(text, level="ERROR")
+
+
+def report_tk_error(exc, value, tb):
+    """Tk callback errors: log them instead of printing to a console nobody sees."""
+    import traceback
+    log_error("".join(traceback.format_exception(exc, value, tb)))
 
 
 def notify_startup_complete():
@@ -2834,6 +2908,7 @@ if __name__ == "__main__":
         debug("Starting MDJ Music Downloader...")
         debug("="*70)
         root = ctk.CTk(className="mdj-music-downloader")
+        root.report_callback_exception = report_tk_error
         debug("✅ Root window created")
         set_window_icon(root)
         app = MusicDownloader(root)
