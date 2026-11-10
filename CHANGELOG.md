@@ -16,6 +16,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 - Queue summary counted songs finished in an earlier run; it now counts only the current run.
 - Long URLs in the queue squeezed the X (remove) button. The URL is now shortened with "..." to fit the space, and re-fits when the window is resized; the X button keeps its size.
 - The left and right panels no longer change width when a download finishes; they keep the size the app opens with.
+- The top border of the left panel was hidden behind the "Video/Audio URL" row; it is now fully visible.
 - Updating yt-dlp asked for the administrator password twice; now once.
 - Opening the browser (Support Development) or file manager from the installed app now uses the system's own libraries instead of the app's bundled ones, which could make them fail to start.
 - Updating failed for a second user on the same computer (shared temporary file in /tmp).

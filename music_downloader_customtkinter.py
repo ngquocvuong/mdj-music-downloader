@@ -384,7 +384,7 @@ class MusicDownloader:
         debug("Creating URL entry frame...")
         self.url_frame = ctk.CTkFrame(left_frame, fg_color="transparent")
         debug("URL frame object created")
-        self.url_frame.pack(fill="x", padx=10, pady=(0, 10))
+        self.url_frame.pack(fill="x", padx=10, pady=(12, 10))  # 12px top: keep clear of the rounded border
         debug("URL frame packed")
 
         debug("Creating URL label...")
