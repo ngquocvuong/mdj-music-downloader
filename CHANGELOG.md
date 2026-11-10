@@ -22,7 +22,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 ### Fixed
 - Clicking **?** (Supported Sites) froze the app for about 2 seconds with nothing on screen. The window now opens immediately with "Loading supported sites..." and a progress bar; the list is loaded in the background, preloaded shortly after startup, and kept for next time. Search is faster and shows how many sites match.
 - At startup the window briefly appeared in the top-left corner of the screen and then jumped to the centre; it now opens centred straight away.
-- The menu entry now asks the desktop for launch feedback (busy cursor while the app starts).
+- The menu entry now asks the desktop for launch feedback (busy cursor while the app starts), and the app tells the desktop when it has finished loading, so the cursor turns back into an arrow straight away.
 - yt-dlp Settings opened about twice as fast, and shows "Loading settings..." straight away instead of a frozen app.
 - After a queue finished, the result message was cleared straight away. It now stays and shows where the files were saved, e.g. "Queue complete: 3 downloaded, 0 failed / Saved to: ~/Music/My Album" (including the Album/Folder subfolder).
 - Queue summary counted songs finished in an earlier run; it now counts only the current run.

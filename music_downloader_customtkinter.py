@@ -2760,6 +2760,74 @@ def set_window_icon(root):
         debug(f"Could not set window icon: {e}", level="WARNING")
 
 
+def notify_startup_complete():
+    """Tell the desktop the app has finished starting, so the busy cursor stops.
+
+    The menu entry has StartupNotify=true: the desktop shows a busy cursor and passes
+    DESKTOP_STARTUP_ID; the app must answer with a freedesktop startup-notification
+    "remove" message. GTK/Qt do this automatically, Tk does not, so send it via Xlib."""
+    startup_id = os.environ.pop("DESKTOP_STARTUP_ID", None)   # not for child programs
+    if not startup_id:
+        return
+    try:
+        import ctypes
+        import ctypes.util
+
+        class ClientData(ctypes.Union):   # union { char b[20]; short s[10]; long l[5]; }
+            _fields_ = [("b", ctypes.c_char * 20), ("l", ctypes.c_long * 5)]
+
+        class XClientMessageEvent(ctypes.Structure):
+            _fields_ = [("type", ctypes.c_int), ("serial", ctypes.c_ulong),
+                        ("send_event", ctypes.c_int), ("display", ctypes.c_void_p),
+                        ("window", ctypes.c_ulong), ("message_type", ctypes.c_ulong),
+                        ("format", ctypes.c_int), ("data", ClientData)]
+
+        class XEvent(ctypes.Union):
+            _fields_ = [("xclient", XClientMessageEvent), ("pad", ctypes.c_long * 24)]
+
+        x11 = ctypes.CDLL(ctypes.util.find_library("X11") or "libX11.so.6")
+        x11.XOpenDisplay.restype = ctypes.c_void_p
+        x11.XOpenDisplay.argtypes = [ctypes.c_char_p]
+        x11.XDefaultRootWindow.restype = ctypes.c_ulong
+        x11.XDefaultRootWindow.argtypes = [ctypes.c_void_p]
+        x11.XInternAtom.restype = ctypes.c_ulong
+        x11.XInternAtom.argtypes = [ctypes.c_void_p, ctypes.c_char_p, ctypes.c_int]
+        x11.XCreateSimpleWindow.restype = ctypes.c_ulong
+        x11.XCreateSimpleWindow.argtypes = [ctypes.c_void_p, ctypes.c_ulong] + [ctypes.c_int] * 4 + [ctypes.c_uint, ctypes.c_ulong, ctypes.c_ulong]
+        x11.XSendEvent.argtypes = [ctypes.c_void_p, ctypes.c_ulong, ctypes.c_int, ctypes.c_long, ctypes.POINTER(XEvent)]
+        x11.XDestroyWindow.argtypes = [ctypes.c_void_p, ctypes.c_ulong]
+        x11.XFlush.argtypes = [ctypes.c_void_p]
+        x11.XCloseDisplay.argtypes = [ctypes.c_void_p]
+
+        dpy = x11.XOpenDisplay(None)
+        if not dpy:
+            return
+        try:
+            root_win = x11.XDefaultRootWindow(dpy)
+            sender = x11.XCreateSimpleWindow(dpy, root_win, -100, -100, 1, 1, 0, 0, 0)
+            begin = x11.XInternAtom(dpy, b"_NET_STARTUP_INFO_BEGIN", False)
+            more = x11.XInternAtom(dpy, b"_NET_STARTUP_INFO", False)
+            quoted = startup_id.replace("\\", "\\\\").replace('"', '\\"')
+            message = f'remove: ID="{quoted}"'.encode("utf-8") + b"\0"
+            for i in range(0, len(message), 20):           # sent in 20-byte pieces
+                ev = XEvent()
+                ev.xclient.type = 33                          # ClientMessage
+                ev.xclient.send_event = 1
+                ev.xclient.display = dpy
+                ev.xclient.window = sender
+                ev.xclient.message_type = begin if i == 0 else more
+                ev.xclient.format = 8
+                ev.xclient.data.b = message[i:i + 20].ljust(20, b"\0")
+                x11.XSendEvent(dpy, root_win, False, 1 << 22, ctypes.byref(ev))  # PropertyChangeMask
+            x11.XDestroyWindow(dpy, sender)
+            x11.XFlush(dpy)
+        finally:
+            x11.XCloseDisplay(dpy)
+        debug("Startup notification sent")
+    except Exception as e:
+        debug(f"Could not send startup notification: {e}", level="WARNING")
+
+
 if __name__ == "__main__":
     try:
         debug("="*70)
@@ -2770,6 +2838,7 @@ if __name__ == "__main__":
         set_window_icon(root)
         app = MusicDownloader(root)
         debug("✅ App initialized")
+        root.after_idle(notify_startup_complete)   # window is up: stop the busy cursor
         root.mainloop()
         debug("App closed normally")
     except Exception as e:
