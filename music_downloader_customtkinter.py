@@ -129,6 +129,8 @@ ACCENT_DIM = "#1f4d49"      # dark teal tint: hover for outline buttons
 LIGHT_TEXT = "#DCE4EE"      # normal light text on dark/coloured buttons
 SWITCH_TRACK = "#1b2023"    # Download Type switch: dark track / unselected half
 SWITCH_HOVER = "#262d31"
+TIP_BG = "#ffffe1"          # classic light-yellow tooltip
+TIP_TEXT = "#1a1a1a"
 
 
 def _apply_brand_theme():
@@ -196,7 +198,7 @@ class HoverTip:
         self._tip = tip = _tk.Toplevel(self.widget)
         tip.wm_overrideredirect(True)
         tip.wm_geometry(f"+{x}+{y}")
-        _tk.Label(tip, text=self.text, bg="#333333", fg="white", padx=6, pady=2,
+        _tk.Label(tip, text=self.text, bg=TIP_BG, fg=TIP_TEXT, padx=6, pady=2,
                   font=("TkDefaultFont", 9), relief="solid", borderwidth=1).pack()
 
     def _hide(self, event=None):
@@ -216,8 +218,8 @@ class TooltipNotification:
         self.label = ctk.CTkLabel(
             self.tooltip,
             text=message,
-            fg_color=ACCENT,
-            text_color=ACCENT_TEXT,
+            fg_color=TIP_BG,
+            text_color=TIP_TEXT,
             corner_radius=8,
             padx=20,
             pady=10
