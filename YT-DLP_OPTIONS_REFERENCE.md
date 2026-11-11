@@ -1,5 +1,13 @@
 # yt-dlp Options Quick Reference
 
+Add these in **⚙ yt-dlp Settings → Advanced → Custom arguments**, one option per line (an option and its value can share a line, e.g. `--limit-rate 1M`). Click **Check** to make sure yt-dlp accepts them.
+
+**Already handled by MDJ** — you usually don't need these:
+- Audio format and quality, video quality: the **Basic** tab. A custom option such as `--audio-format flac` wins, and the Basic control is locked with a note.
+- Cover art and title/artist/album/track tags: the Basic tab's Extras (MDJ writes them itself after the download).
+- `--download-archive` (skipping songs you have), `--no-playlist` and `--windows-filenames` are set by MDJ. Custom arguments override them, but changing `--download-archive` breaks skipping songs you already have. `--yes-playlist` brings back downloading the whole playlist from a song-in-playlist link.
+- File names (`-o`) are always set by MDJ, because album folders and track numbering depend on them, so a custom `-o` for the file name has no effect. Use the Album/Folder field and Output Folder instead.
+
 ## 🎵 Audio Options
 
 ```bash
@@ -81,15 +89,14 @@
 
 ## 📝 Metadata Options
 
+In MDJ, songs already get covers and tags from the Basic tab's Extras; these are for videos or plain yt-dlp.
+
 ```bash
 # Embed thumbnail
 --embed-thumbnail
 
 # Embed metadata
 --embed-metadata
-
-# Add to filename
--o "%(uploader)s - %(title)s.%(ext)s"
 ```
 
 ## 📋 Playlist Options
@@ -105,7 +112,7 @@
 --playlist-start 5
 --playlist-end 10
 
-# Archive (skip downloaded)
+# Archive (skip downloaded) - MDJ already keeps one per folder (.mdj-tracks.json)
 --download-archive archive.txt
 ```
 
@@ -170,6 +177,8 @@
 
 ## 📁 Output Options
 
+For plain yt-dlp. In MDJ, file names and folders come from the Output Folder, Album/Folder and "Number tracks", and a custom `-o` is ignored.
+
 ```bash
 # Output template
 -o "%(title)s.%(ext)s"
@@ -203,6 +212,7 @@
 ## 💡 Useful Combinations
 
 ### Best Audio Quality with Metadata
+In MDJ: choose opus and Best on the Basic tab, and keep both Extras on. With plain yt-dlp:
 ```bash
 -x --audio-format opus --audio-quality 0 --embed-thumbnail --embed-metadata
 ```
@@ -217,9 +227,10 @@
 --limit-rate 500K --retries 10 --fragment-retries 10 --continue
 ```
 
-### Playlist Download with Archive
+### Playlist Download, Oldest First, Slowly
+MDJ already skips songs you have, so no archive file is needed:
 ```bash
---download-archive downloaded.txt --playlist-reverse --sleep-interval 3
+--playlist-reverse --sleep-interval 3
 ```
 
 ### Private/Age-Restricted Content

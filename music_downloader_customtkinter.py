@@ -1103,7 +1103,6 @@ class TooltipNotification:
         parent.update_idletasks()
         self.tooltip.update_idletasks()
         tooltip_width = self.tooltip.winfo_reqwidth()
-        tooltip_height = self.tooltip.winfo_reqheight()
         parent_x = parent.winfo_x()
         parent_y = parent.winfo_y()
         parent_width = parent.winfo_width()
@@ -2064,7 +2063,6 @@ class MusicDownloader:
         # Update button text
         self.update_download_button_text()
 
-        queue_size = len(self.download_queue)
         TooltipNotification(self.root, "✓ Added to queue", once="queued")
 
     def create_queue_item(self, index):

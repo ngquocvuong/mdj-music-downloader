@@ -8,6 +8,8 @@ dist/
 # Distribution
 *.deb
 debian/
+# Flatpak build cache
+.flatpak-builder/
 # yt-dlp binary (downloaded at build time, not part of the source)
 /yt-dlp
 

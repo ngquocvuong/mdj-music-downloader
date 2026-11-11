@@ -58,7 +58,8 @@ Maintainer: MDJ Digital LLC <blackhawk_7585@icloud.com>
 Homepage: https://github.com/ngquocvuong/mdj-music-downloader
 Description: Modern music and video downloader for Linux
  Download audio and video from YouTube and 1000+ sites.
- Features queue management, playlists, and smart organization.
+ Features a numbered download queue, album folders with track numbers,
+ cover art and tags for music players, and .m3u playlists.
 CTRLEOF
 
 cat > "$PKG/DEBIAN/postinst" <<'POSTEOF'

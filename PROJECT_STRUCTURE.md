@@ -4,8 +4,10 @@
 mdj-music-downloader/
 ├── music_downloader_customtkinter.py   # Main application
 ├── music_downloader.spec               # PyInstaller build specification
-├── icons/                              # App icon (SVG + 32–512px PNGs)
-├── screenshot.png                      # Screenshot used in README
+├── icons/                              # App icon (SVG + 32–512px PNGs), mdj-cover.jpg (fallback cover art)
+├── screenshot.png                      # Main window screenshot (README, Flathub)
+├── screenshot-settings.png             # yt-dlp Settings screenshot (README, Flathub)
+├── flatpak/                            # Flathub manifest, metainfo, desktop file, launcher (see flatpak/README.md)
 ├── mdj-music-downloader.desktop        # Linux menu entry
 ├── config.sample.json                  # Example user config
 ├── build.sh                            # Build executable (dist/music_downloader)
@@ -23,5 +25,6 @@ mdj-music-downloader/
 - `debian/`, `*.deb` – package build output
 - `yt-dlp` – downloaded at package build time
 - `__pycache__/`
+- `.flatpak-builder/` – Flatpak build cache
 
 See [INSTALL.md](INSTALL.md) for build instructions.

@@ -30,10 +30,14 @@ User Config Directory (per-user):
 ~/.config/mdj-music-downloader/
 └── config.json                         (actual config file)
 
-Installation:
+Installation (.deb):
 /opt/mdj-music-downloader/
 ├── music_downloader                    (binary)
 └── yt-dlp                              (downloader)
+
+Flatpak:
+~/.var/app/io.github.ngquocvuong.mdj-music-downloader/config/mdj-music-downloader/
+└── config.json                         (actual config file)
 ```
 
 ## 🔧 How It Works
@@ -146,7 +150,7 @@ Example:
 4. Click "Save Settings"
 
 ### Method 2: Edit File Directly
-1. Open: `~/.config/mdj-music-downloader/config.json`
+1. Open: `~/.config/mdj-music-downloader/config.json` (Flatpak: the path at the top of this guide)
 2. Edit JSON (use sample as reference)
 3. Save file
 4. Restart app
@@ -177,10 +181,12 @@ App will recreate with defaults on next launch.
 
 ## 🧪 Testing Your Config
 
-Enable debug mode to see exact yt-dlp commands:
+The easiest way: open "⚙ yt-dlp Settings", Advanced tab. **Check** asks yt-dlp whether it accepts your options, and "What the app will run" shows the exact command for audio and video.
+
+For a full log, enable debug mode:
 
 1. Edit source: `music_downloader_customtkinter.py`
-2. Line 16: Set `DEBUG = True`
+2. Line 25: Set `DEBUG = True`
 3. Rebuild: `./build.sh`
 4. Run app and try download
 5. Check: `cat /tmp/mdj-music-downloader-debug.log`

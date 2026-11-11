@@ -94,6 +94,7 @@ Exec=$INSTALL_DIR/music_downloader
 Icon=mdj-music-downloader
 Type=Application
 Categories=AudioVideo;Audio;
+Keywords=music;mp3;youtube;download;video;playlist;album;
 Terminal=false
 StartupWMClass=mdj-music-downloader
 StartupNotify=true
@@ -151,14 +152,15 @@ if [ $ERRORS -eq 0 ]; then
     echo ""
     echo "✨ Features:"
     echo "   ✓ User-friendly error messages"
-    echo "   ✓ Download audio (MP3) or video (MP4)"
-    echo "   ✓ Queue multiple downloads"
-    echo "   ✓ Organize into albums/folders"
-    echo "   ✓ Auto-numbering for tracks"
+    echo "   ✓ Download audio (MP3, M4A, Opus, FLAC, WAV) or video (MP4)"
+    echo "   ✓ Numbered download queue, with Export/Import"
+    echo "   ✓ Album folders with track numbers that continue"
+    echo "   ✓ Cover art and tags for music players and car stereos"
+    echo "   ✓ Skips songs you already have"
     echo "   ✓ Works on all user accounts"
     echo ""
     echo "📝 Config location: ~/.config/mdj-music-downloader/"
-    echo "📥 Default downloads: ~/Music/"
+    echo "📥 Default downloads: ~/Music/MDJ Downloads"
     echo ""
 else
     echo "╔════════════════════════════════════════════════════════════╗"

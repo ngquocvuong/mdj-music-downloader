@@ -5,13 +5,14 @@ App ID: `io.github.ngquocvuong.mdj-music-downloader`. It must match the GitHub r
 | File | What it is |
 |---|---|
 | `io.github.ngquocvuong.mdj-music-downloader.yml` | Build recipe (manifest) |
-| `io.github.ngquocvuong.mdj-music-downloader.metainfo.xml` | Store page: description, screenshot, releases |
+| `io.github.ngquocvuong.mdj-music-downloader.metainfo.xml` | Store page: description, screenshots, releases |
 | `io.github.ngquocvuong.mdj-music-downloader.desktop` | Menu entry |
 | `mdj-music-downloader.sh` | Launcher (`/app/bin/mdj-music-downloader`) |
 
 What goes into the Flatpak:
 - Tcl/Tk 8.6 and Python's `tkinter`. The runtime's Python doesn't include them.
 - customtkinter 5.2.2
+- mutagen, which writes cover art and tags
 - yt-dlp, with yt-dlp-ejs
 - Node.js, the JavaScript engine yt-dlp needs for YouTube
 - ffmpeg, which comes from the runtime
@@ -41,7 +42,7 @@ $L repo ~/.cache/mdj-flatpak-build/repo
 
 ## Before submitting (release v1.1.0)
 
-1. Set `APP_VERSION = "1.1.0"` in the app, and update the `<release>` date and notes in the metainfo.
+1. Set `APP_VERSION = "1.1.0"` in the app and the version in `build-deb.sh` and `INSTALL.sh`, update the `.deb` file names in README.md, INSTALL.md and RELEASE_NOTES.md, set the date in CHANGELOG.md, and update the `<release>` date and notes in the metainfo.
 2. Commit, tag `v1.1.0` and push. The screenshot URL in the metainfo points to the tag, so the linter's screenshot warning goes away once the tag exists.
 3. In the manifest, replace the `type: dir` source with the `type: git` block that's commented out there, using the tag and its commit hash.
 4. Check whether newer versions of the Python wheels (yt-dlp especially) are available, and update their URLs and sha256 checksums.

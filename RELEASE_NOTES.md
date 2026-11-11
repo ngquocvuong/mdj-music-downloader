@@ -1,6 +1,19 @@
-# MDJ Music Downloader v1.0.3 - Release Notes
+# MDJ Music Downloader v1.1.0 - Release Notes
 
-## 🆕 What's new in v1.0.3
+## 🆕 What's new in v1.1.0
+- **Flatpak, ready for Flathub:** yt-dlp, ffmpeg and Node.js are included, so nothing else has to be installed.
+- **New yt-dlp Settings window.** Basic tab: audio format (mp3, m4a, opus, flac, wav) and quality, video quality (up to 4K), cover art and tags. Advanced tab: any yt-dlp option, with step-by-step help, a **Check** button and a live preview of the exact command. It opens much faster, and instantly after the first time.
+- **Cover art and tags for music players, phones and car stereos.** Songs get a square cover and title, artist and year tags; album songs also get the album name and track number. Album folders get a `cover.jpg`, and albums with different artists are marked "Various Artists".
+- **Track numbering continues** in an existing album folder (`01`, `02` → `03`) instead of starting again at `01`.
+- **Songs you already have are skipped**, so retrying a playlist only downloads what's missing.
+- A link to one song inside a playlist downloads **only that song**.
+- **Numbered queue** (1., 2., 3. ...).
+- **Export and Import remember names and folders:** Export suggests `<album>.txt`, Import fills in the album name.
+- File names work on USB sticks and SD cards (car stereos, MP3 players).
+- The default download folder is now `~/Music/MDJ Downloads`.
+- Many fixes: see [CHANGELOG.md](CHANGELOG.md) for the full list.
+
+### v1.0.3
 - **"Update yt-dlp" now works for every user on a shared computer.** Enter an administrator password to update it for all users, or cancel to update it just for your own account — no more "Permission denied".
 - The password is asked only once (was twice), and not at all when yt-dlp is already up to date.
 - Fixed: updating failed for a second user on the same computer.
@@ -42,8 +55,8 @@ A user-friendly application for downloading music and videos from YouTube and 10
 ## ✨ Key Features
 
 ### Download Capabilities
-- **Audio Download**: MP3 format with best quality
-- **Video Download**: MP4 format with best quality
+- **Audio Download**: MP3 (or M4A, Opus, FLAC, WAV) with best quality, cover art and tags
+- **Video Download**: MP4 up to 4K
 - **Queue System**: Add multiple URLs and download them sequentially
 - **Album Organization**: Organize downloads into folders
 - **Track Numbering**: Automatically number tracks in order
@@ -122,16 +135,16 @@ sudo ./INSTALL.sh   # install binary, yt-dlp, icon and menu entry
 
 ### Download Audio
 1. Paste or enter YouTube URL
-2. Select "Audio (MP3)" mode
+2. Select **Audio** (MP3 by default; change the format in yt-dlp Settings)
 3. (Optional) Enter album/folder name
 4. Click "Download" or "+ Queue" for batch downloads
 
 ### Download Video
 1. Paste or enter video URL
-2. Select "Video (MP4)" mode
+2. Select **Video**
 3. Click "Download"
 
-### Update yt-dlp
+### Update yt-dlp (.deb only; in the Flatpak, yt-dlp is updated with the app)
 1. Click "Update yt-dlp" button
 2. Click "Update Now"
 3. Enter an administrator password to update it for **all users** — or cancel to update it **just for your account**
@@ -158,7 +171,8 @@ sudo ./INSTALL.sh   # install binary, yt-dlp, icon and menu entry
 - **yt-dlp**: `/opt/mdj-music-downloader/yt-dlp` (all users)
 - **yt-dlp updated without admin password**: `~/.local/share/mdj-music-downloader/yt-dlp` (that user only; the newer copy is used)
 - **User Config**: `~/.config/mdj-music-downloader/config.json`
-- **Default Downloads**: `~/Music/`
+- **Default Downloads**: `~/Music/MDJ Downloads`
+- **Flatpak Config**: `~/.var/app/io.github.ngquocvuong.mdj-music-downloader/config/mdj-music-downloader/config.json`
 - **Desktop Entry**: `/usr/share/applications/mdj-music-downloader.desktop`
 
 ---
@@ -198,7 +212,7 @@ When reporting issues, please include:
 - Check error message guidance first
 - Verify internet connection
 - Try updating yt-dlp
-- Check the supported sites list in the app (blue **?** next to "Video/Audio URL")
+- Check the supported sites list in the app (the small **?** next to "Video/Audio URL")
 
 ---
 
@@ -219,6 +233,14 @@ This application is licensed under the MIT License.
 ---
 
 ## 📝 Changelog
+
+### v1.1.0 (unreleased)
+- 📦 Flatpak for Flathub
+- ⚙️ New yt-dlp Settings window (Basic and Advanced tabs, Check, command preview)
+- 🖼️ Cover art and tags; album `cover.jpg`; "Various Artists" albums
+- 🔢 Numbering continues in existing albums; numbered queue
+- ⏭️ Songs you already have are skipped
+- 💾 Export/Import remember album names and folders
 
 ### v1.0.3 (2026-11-09)
 - 👥 "Update yt-dlp" works for standard users (per-user copy), one password prompt, faster startup
