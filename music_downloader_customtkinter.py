@@ -302,6 +302,19 @@ def parse_saved_lines(stdout):
     return saved
 
 
+def safe_file_name(name):
+    """A name usable as a file name everywhere (also USB sticks): no / \\ : * ? " < > |."""
+    name = re.sub(r"\s*:\s*", " - ", name)            # "AC/DC: Live" -> "AC-DC - Live"
+    name = re.sub(r'[\\/*?"<>|\0]+', "-", name).strip(" .-")
+    return re.sub(r"\s+", " ", name)
+
+
+def is_portal_document(path):
+    """A file the Flatpak got through the file chooser portal (/run/user/<uid>/doc/...): its
+    folder only shows the files picked, so it is not useful as a folder to remember."""
+    return os.path.realpath(path).startswith("/run/user/") and "/doc/" in path
+
+
 def safe_folder_name(name):
     """Album/Folder name usable as one folder: no "/" (would make sub-folders), no "." / ".."."""
     name = name.strip().replace("/", "-").replace("\0", "")
@@ -975,24 +988,26 @@ _apply_brand_theme()
 
 
 def _speed_up_ctk_scrollbars():
-    """CustomTkinter's scrollbar forces a full redraw of the whole app (update_idletasks)
-    every time it is drawn. Windows with scrollbars then took 1-2 s to open. Tk redraws
-    by itself a moment later anyway, so skip that forced redraw."""
-    original = ctk.CTkScrollbar._draw
-    if getattr(original, "_mdj_fast", False):
-        return
+    """CustomTkinter's scrollbar and option menu (drop-down) force a full redraw of the whole
+    app (update_idletasks) every time they are drawn. Windows with scrollbars took 1-2 s to
+    open, and the 4 drop-downs made yt-dlp Settings take 3-4 s to build. Tk redraws by
+    itself a moment later anyway, so skip that forced redraw."""
+    for cls in (ctk.CTkScrollbar, ctk.CTkOptionMenu):
+        original = cls._draw
+        if getattr(original, "_mdj_fast", False):
+            continue
 
-    def _draw(self, *args, **kwargs):
-        canvas = getattr(self, "_canvas", None)
-        if canvas is None:
-            return original(self, *args, **kwargs)
-        canvas.update_idletasks = lambda: None      # instance attribute hides the method
-        try:
-            return original(self, *args, **kwargs)
-        finally:
-            del canvas.update_idletasks
-    _draw._mdj_fast = True
-    ctk.CTkScrollbar._draw = _draw
+        def _draw(self, *args, _original=original, **kwargs):
+            canvas = getattr(self, "_canvas", None)
+            if canvas is None:
+                return _original(self, *args, **kwargs)
+            canvas.update_idletasks = lambda: None      # instance attribute hides the method
+            try:
+                return _original(self, *args, **kwargs)
+            finally:
+                del canvas.update_idletasks
+        _draw._mdj_fast = True
+        cls._draw = _draw
 
 
 _speed_up_ctk_scrollbars()
@@ -1152,6 +1167,7 @@ class MusicDownloader:
 
         # Load configuration (output dir + yt-dlp settings)
         self.output_dir, self.ytdlp_config = self.load_config()
+        self.queue_dir = self._load_queue_dir()
         debug("Config loaded (output_dir + ytdlp_config)")
 
         # Download type
@@ -2061,6 +2077,17 @@ class MusicDownloader:
         top_row = ctk.CTkFrame(item_frame, fg_color="transparent")
         top_row.pack(fill="x", padx=5, pady=(5, 2))
 
+        # Position in the queue (1., 2., ...): muted, right-aligned, same width on every row
+        number_label = ctk.CTkLabel(
+            top_row,
+            text=f"{index + 1}.",
+            font=ctk.CTkFont(size=11),
+            text_color=("#777777", "#8a8a8a"),
+            width=26,
+            anchor="e"
+        )
+        number_label.pack(side="left", padx=(2, 0))
+
         status_label = ctk.CTkLabel(
             top_row,
             text="…",
@@ -2096,6 +2123,7 @@ class MusicDownloader:
         url_label.pack(side="left", fill="x", expand=True)
         url_label._full_text = item['url']
         url_label._shown_text = None
+        url_label._number_label = number_label
         top_row.bind("<Configure>", lambda e, lbl=url_label, row=top_row, st=status_label, btn=remove_btn:
                      self._fit_url_label(lbl, row, st, btn))
         self.root.after_idle(lambda: self._fit_url_label(url_label, top_row, status_label, remove_btn))
@@ -2110,6 +2138,7 @@ class MusicDownloader:
 
         item['widget'] = {
             'frame': item_frame,
+            'number_label': number_label,
             'status_label': status_label,
             'url_label': url_label,
             'remove_btn': remove_btn,
@@ -2143,6 +2172,9 @@ class MusicDownloader:
                 return  # not laid out yet; <Configure> will call again
             # Space left for the URL = row - status icon - X button - their padding
             avail = row_w - status_label.winfo_reqwidth() - remove_btn.winfo_reqwidth() - 5 - 10 - 8
+            number = getattr(label, "_number_label", None)
+            if number is not None:
+                avail -= number.winfo_reqwidth() + 2
             font = tkfont.Font(font=label._label.cget("font"))
             shown = self._truncate_to_width(label._full_text, font, max(avail, 20))
             if shown != label._shown_text:  # only touch the label when the text really changes
@@ -2171,9 +2203,21 @@ class MusicDownloader:
 
             if len(self.download_queue) == 0:
                 self.empty_queue_label.pack(expand=True, pady=50)
+            self._renumber_queue()
 
             # Update button text
             self.update_download_button_text()
+
+    def _renumber_queue(self):
+        """Keep the row numbers 1, 2, 3... with no gaps (after a row is removed)."""
+        for i, item in enumerate(self.download_queue):
+            if item['widget']:
+                try:
+                    label = item['widget']['number_label']
+                    if label.cget("text") != f"{i + 1}.":
+                        label.configure(text=f"{i + 1}.")
+                except (tk.TclError, KeyError):
+                    pass
 
     def _set_remove_buttons(self, enabled):
         """Enable/disable the X buttons of all queue rows"""
@@ -2306,9 +2350,12 @@ class MusicDownloader:
             TooltipNotification(self.root, "Queue is empty - nothing to save")
             return
 
+        # The Album/Folder name makes a good file name (Import turns it back into the album name)
+        name = safe_file_name(self.album_entry.get()) or "queue"
         self.ask_path("save", "Save Queue to File", self._save_queue_to,
+                      initialdir=self.queue_folder(),
                       filetypes=[("Text files", "*.txt"), ("All files", "*.*")],
-                      defaultextension=".txt", initialfile="queue.txt")
+                      defaultextension=".txt", initialfile=name + ".txt")
 
     def _save_queue_to(self, filename):
         if filename:
@@ -2316,6 +2363,7 @@ class MusicDownloader:
                 with open(filename, 'w', encoding='utf-8') as f:
                     for item in self.download_queue:
                         f.write(item['url'] + '\n')
+                self.remember_queue_folder(filename)
                 TooltipNotification(self.root, f"✓ Saved {len(self.download_queue)} URLs to file")
             except Exception as e:
                 self.show_error_dialog("Save Failed", f"Could not save queue:\n{str(e)}")
@@ -2329,6 +2377,7 @@ class MusicDownloader:
 
     def browse_queue_file(self):
         self.ask_path("open", "Load Queue from File", self._load_queue_from,
+                      initialdir=self.queue_folder(),
                       filetypes=[("Text files", "*.txt"), ("All files", "*.*")])
 
     def show_import_picker(self):
@@ -2344,9 +2393,11 @@ class MusicDownloader:
         frame.pack(expand=True, fill="both", padx=12, pady=12)
         ctk.CTkLabel(frame, text="Import Queue",
                      font=ctk.CTkFont(size=18, weight="bold")).pack(pady=(10, 0))
-        folder = self.output_dir
+        folder = self.queue_folder()
         shown = folder.replace(os.path.expanduser("~"), "~", 1)
-        ctk.CTkLabel(frame, text=f"Queue files in your Output Folder:\n{shown}",
+        where = ("Queue files in your Output Folder:" if os.path.normpath(folder) == os.path.normpath(self.output_dir)
+                 else "Queue files in:")
+        ctk.CTkLabel(frame, text=f"{where}\n{shown}",
                      font=ctk.CTkFont(size=11), text_color=muted, justify="center",
                      wraplength=420).pack(pady=(2, 8))
 
@@ -2392,7 +2443,12 @@ class MusicDownloader:
             name_lbl.pack(side="left", fill="x", expand=True, padx=(10, 6), pady=3)
             date_lbl = ctk.CTkLabel(row, text=date, font=ctk.CTkFont(size=11), text_color=muted)
             date_lbl.pack(side="right", padx=10)
+            def hover(on, r=row):
+                if chosen["button"] is not r:       # the chosen row keeps its own colour
+                    r.configure(fg_color=("#d0d0d0", "#2b3236") if on else "transparent")
             for w in (row, name_lbl, date_lbl):
+                w.bind("<Enter>", lambda e, h=hover: h(True), add="+")
+                w.bind("<Leave>", lambda e, h=hover: h(False), add="+")
                 w.bind("<Button-1>", lambda e, p=path, r=row: select(p, r))
                 w.bind("<Double-Button-1>", lambda e, p=path: do_import(p))
                 w.configure(cursor="hand2")
@@ -2447,12 +2503,23 @@ class MusicDownloader:
                     added_count += 1
 
                 self.update_download_button_text()
+                self.remember_queue_folder(filename)
+                album = ""
+                stem = os.path.splitext(os.path.basename(filename))[0].strip()
+                # An empty Album/Folder takes the file's name ("Summer Hits.txt" -> "Summer Hits"),
+                # except Export's default name "queue". Locked while downloading: left alone.
+                if (added_count and stem and stem.lower() != "queue" and not self.album_entry.get().strip()
+                        and self.album_entry.cget("state") == "normal"):
+                    self.album_entry.insert(0, stem)
+                    album = stem
                 if added_count == 0:
                     message = "⚠ No new URLs in this file"
                 else:
                     message = f"✓ Loaded {added_count} URLs"
                     if self.downloading:
                         message += " (added to the running queue)"
+                    if album:
+                        message += f" · Album/Folder: {album}"
                 extras = []
                 if skipped_count:
                     extras.append(f"{skipped_count} already in queue")
@@ -2521,12 +2588,41 @@ class MusicDownloader:
         output_dir, _ = self.load_config()
         return output_dir
 
+    def _load_queue_dir(self):
+        """Folder last used for Export / Import ("" = use the Output Folder)."""
+        try:
+            with open(self.config_file, "r") as f:
+                value = json.load(f).get("queue_dir", "")
+            return value if isinstance(value, str) else ""
+        except (OSError, ValueError, AttributeError):
+            return ""
+
+    def queue_folder(self):
+        """Where Export saves and Import looks: the folder used last time, else the Output Folder."""
+        folder = getattr(self, "queue_dir", "")
+        return folder if folder and os.path.isdir(folder) else self.output_dir
+
+    def remember_queue_folder(self, path):
+        """Remember the folder of an exported / imported queue file for next time."""
+        folder = os.path.dirname(os.path.abspath(path))
+        if is_portal_document(path) or not os.path.isdir(folder):
+            return
+        new = "" if os.path.normpath(folder) == os.path.normpath(self.output_dir) else folder
+        if new != getattr(self, "queue_dir", ""):
+            self.queue_dir = new
+            try:
+                self.save_config()
+            except OSError:
+                pass
+
     def save_config(self):
         """Save full config including output_dir and yt-dlp settings"""
         config = {
             "output_dir": self.output_dir,
             "ytdlp_config": self.ytdlp_config
         }
+        if getattr(self, "queue_dir", ""):
+            config["queue_dir"] = self.queue_dir
         with open(self.config_file, "w") as f:
             json.dump(config, f, indent=2)
 
@@ -3315,9 +3411,16 @@ class MusicDownloader:
         """yt-dlp settings: common choices on the Basic tab, any yt-dlp option on the Advanced tab."""
         win = getattr(self, "_settings_window", None)
         if win is not None and win.winfo_exists():
+            # Built once and kept (hidden when closed): showing it again is instant, while
+            # building it takes 1-2 s. Reload the current settings into it first.
+            if win.state() == "withdrawn" and getattr(self, "_settings_reload", None):
+                self._settings_reload()
+                self.center_dialog(win, win.winfo_width(), win.winfo_height())
+                win.deiconify()
             win.lift()
             win.focus_force()
             return
+        self._settings_reload = None
         settings_window = ctk.CTkToplevel(self.root)
         self._settings_window = settings_window
         settings_window.title("yt-dlp Settings")
@@ -3343,13 +3446,18 @@ class MusicDownloader:
                      font=ctk.CTkFont(size=11), text_color=muted).pack(pady=(0, 2))
 
         # Show the window straight away with "Loading...", then build the (slow) rest
-        loading = ctk.CTkLabel(frame, text="Loading settings...", font=ctk.CTkFont(size=13),
-                               text_color=muted)
+        # (only the first time: the window is kept and reused afterwards)
+        loading = ctk.CTkFrame(frame, fg_color="transparent")
         loading.pack(expand=True)
+        ctk.CTkLabel(loading, text="Loading settings...", font=ctk.CTkFont(size=13)).pack(pady=(0, 10))
+        loading_bar = ctk.CTkProgressBar(loading, mode="indeterminate", width=220)
+        loading_bar.pack()
+        loading_bar.start()
 
         def build_rest():
             if not settings_window.winfo_exists():
                 return
+            loading_bar.stop()
             loading.destroy()
             cfg = self.ytdlp_config
 
@@ -3570,12 +3678,12 @@ class MusicDownloader:
                 # Basic: lock what Custom arguments replace, and say so
                 over = overridden_settings(custom)
                 for key, (w, note) in controls.items():
-                    if key in over:
-                        w.configure(state="disabled")
-                        note.configure(text="← set by Custom arguments: " + over[key])
-                    else:
-                        w.configure(state="normal")
-                        note.configure(text="")
+                    state = "disabled" if key in over else "normal"
+                    text = "← set by Custom arguments: " + over[key] if key in over else ""
+                    if w.cget("state") != state:            # re-configuring redraws: only on change
+                        w.configure(state=state)
+                    if note.cget("text") != text:
+                        note.configure(text=text)
                 # Advanced: the full command, with the custom part highlighted
                 c = dialog_cfg(common or [], [])
                 base = self.build_ytdlp_command("<link>", "<Output Folder>", mode_var.get() == "Audio",
@@ -3678,11 +3786,15 @@ class MusicDownloader:
                 check_args(common + custom, done)
             check_btn.configure(command=on_check)
 
+            def hide():
+                settings_window.withdraw()          # kept for next time (see show_ytdlp_settings)
+                self.root.focus_force()
+
             def apply(common, custom):
                 self.ytdlp_config = dialog_cfg(common, custom)
                 self.save_config()
                 self.update_type_summary()
-                settings_window.destroy()
+                hide()
                 TooltipNotification(self.root, "✓ Settings saved", 2000)
 
             def save_settings():
@@ -3691,7 +3803,7 @@ class MusicDownloader:
                     tabs.set("Advanced")
                     show_status(False, "✗ " + err)
                     return
-                if not custom and common == normalize_args(cfg.get("common_args", [])):
+                if not custom and common == normalize_args(self.ytdlp_config.get("common_args", [])):
                     apply(common, custom)       # nothing typed that needs checking
                     return
                 save_btn.configure(state="disabled", text="Checking...")
@@ -3707,30 +3819,39 @@ class MusicDownloader:
                         apply(common, custom)
                 check_args(common + custom, done)
 
+            def load_values(c):
+                """Show config c in every control (on reopening the window, and for Reset)."""
+                fmt = c.get("audio_format", "mp3")
+                audio_fmt_var.set(fmt if fmt in AUDIO_FORMATS else "mp3")
+                audio_q_var.set(q_by_value.get(str(c.get("audio_quality", "0")), AUDIO_QUALITIES[0][0]))
+                code = c.get("video_quality", "") or DEFAULT_VIDEO_FORMAT
+                video_entry.delete(0, "end")
+                video_entry.insert(0, code)
+                video_var.set(preset_label_for(code))
+                thumb_var.set(bool(c.get("embed_thumbnail")))
+                meta_var.set(bool(c.get("embed_metadata")))
+                cookies_var.set(c.get("cookies_browser") or "Off")
+                custom_text.delete("1.0", "end")
+                placeholder["on"] = False
+                custom_text.insert("1.0", args_to_text(c.get("custom_args", [])))
+                show_help()                       # empty: the step-by-step help comes back
+                common_text.delete("1.0", "end")
+                common_text.insert("1.0", args_to_text(c.get("common_args", [])))
+                status.configure(text="")
+                save_btn.configure(state="normal", text="Save Settings")
+                check_btn.configure(state="normal", text="Check")
+                tabs.set("Basic")
+                on_tab_change()
+
             def show_defaults():
                 """Put every control back to its default, save, and keep the window open."""
                 if not settings_window.winfo_exists():
                     return
                 d = self.get_default_ytdlp_config()
-                audio_fmt_var.set(d["audio_format"])
-                audio_q_var.set(q_by_value.get(d["audio_quality"], AUDIO_QUALITIES[0][0]))
-                video_entry.delete(0, "end")
-                video_entry.insert(0, d["video_quality"])
-                video_var.set(preset_label_for(d["video_quality"]))
-                thumb_var.set(bool(d["embed_thumbnail"]))
-                meta_var.set(bool(d["embed_metadata"]))
-                cookies_var.set(d["cookies_browser"] or "Off")
-                custom_text.delete("1.0", "end")
-                placeholder["on"] = False
-                show_help()                       # empty again: the step-by-step help comes back
-                common_text.delete("1.0", "end")
-                common_text.insert("1.0", args_to_text(d["common_args"]))
-                status.configure(text="")
+                load_values(d)
                 self.ytdlp_config = d
                 self.save_config()
                 self.update_type_summary()
-                tabs.set("Basic")
-                on_tab_change()
                 TooltipNotification(settings_window, "✓ Settings reset to defaults", 2000)
 
             def reset_defaults():
@@ -3744,7 +3865,7 @@ class MusicDownloader:
             ctk.CTkButton(button_frame, text="Reset to Defaults", command=reset_defaults, height=35,
                           fg_color="#8B4545", hover_color="#6B3535",
                           text_color=LIGHT_TEXT).pack(side="left", expand=True, fill="x", padx=(0, 5))
-            ctk.CTkButton(button_frame, text="Cancel", command=settings_window.destroy, height=35,
+            ctk.CTkButton(button_frame, text="Cancel", command=hide, height=35,
                           fg_color="transparent", border_width=1, text_color=LIGHT_TEXT,
                           hover_color=ACCENT_DIM).pack(side="left", expand=True, fill="x", padx=5)
             save_btn = ctk.CTkButton(button_frame, text="Save Settings", command=save_settings,
@@ -3756,6 +3877,8 @@ class MusicDownloader:
             adv.pack(expand=True, fill="both")
             tabs.pack(expand=True, fill="both", padx=12, pady=(0, 8))
             refresh()                       # lock overridden Basic settings, fill the preview
+            settings_window.protocol("WM_DELETE_WINDOW", hide)    # the window's X: keep it too
+            self._settings_reload = lambda: load_values(self.ytdlp_config)
 
         self.after_shown(settings_window, build_rest)
 

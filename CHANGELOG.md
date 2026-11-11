@@ -21,6 +21,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
   - If the album has songs by different artists, its album artist is "Various Artists" and it is marked as a compilation, so players keep it together instead of splitting it into one album per artist.
   - Songs whose source has no picture (or whose picture could not be downloaded) get the MDJ logo as their cover. The folder's `cover.jpg` only uses the logo when no song has a real cover, and switches to a real one as soon as a song with a picture is added.
   - Videos get title, artist and date tags, but no extra cover picture: a video shows its own picture, and an embedded cover confuses some TVs and car screens. Add `--embed-thumbnail` in Custom arguments to get one anyway.
+- **Export and Import remember names and folders.** Export suggests the Album/Folder name as the file name (e.g. `Summer Hits.txt`, otherwise `queue.txt`). Import fills an empty Album/Folder with the file's name (`Summer Hits.txt` → "Summer Hits"). Both remember the folder you last exported to or imported from; until then, and if that folder is gone, they use the Output Folder.
 - Lists (the queue, Supported Sites, settings) scroll with the mouse wheel.
 
 ### Changed
@@ -28,6 +29,9 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 - A link to a song inside a playlist (`watch?v=...&list=...`, including YouTube Mixes) now downloads **only that song**. Playlist links still download the whole list. Add `--yes-playlist` in Custom arguments to get the old behaviour.
 - The Download Type buttons now just say **Audio** and **Video**.
 - **Reset to Defaults** in yt-dlp Settings asks in the app's own style (instead of a plain system box) and keeps the window open, showing the default settings.
+- yt-dlp Settings opens much faster: the first time with a "Loading settings..." bar (about twice as fast as before), and afterwards instantly, because the window is kept and reused.
+- In the Import list, the row under the mouse is highlighted.
+- Queue rows are numbered (1., 2., 3. ...), and the numbers close up when a song is removed.
 - File names now also work on USB sticks and SD cards used in car stereos and MP3 players: characters those drives don't allow (`? : " * | < >`) are replaced, e.g. "AC/DC: Back in Black" is saved as "AC_DC - Back in Black". The title tag keeps the real title.
 - "URL pasted" and "Added to queue" messages show only the first time per session. Notifications are smaller, and only one shows at a time.
 - Quieter **?** (Supported Sites) button: a small grey circle that turns teal under the mouse.
