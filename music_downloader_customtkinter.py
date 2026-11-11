@@ -1,5 +1,5 @@
 import customtkinter as ctk
-from tkinter import filedialog, messagebox
+from tkinter import filedialog
 import subprocess
 import os
 import threading
@@ -243,42 +243,62 @@ def write_album_playlist(folder):
 
 
 TRACKS_FILE = ".mdj-tracks.json"     # hidden, in each download folder
-# Printed by yt-dlp for every file it saves: "MDJ<tab>Youtube<tab><video id><tab><final path>"
-SAVED_PRINT = "after_move:MDJ\t%(extractor_key)s\t%(id)s\t%(filepath)s"
+# Printed by yt-dlp for every file it saves:
+# "MDJ<tab>Youtube<tab><video id><tab><final path><tab>{title, artist, ... as JSON}"
+SAVED_PRINT = ("after_move:MDJ\t%(extractor_key)s\t%(id)s\t%(filepath)s\t"
+               "%(.{title,track,artist,artists,creator,uploader,channel,album,release_year,upload_date})j")
 
 
-def load_track_map(folder):
-    """{"youtube <id>": file name} of the videos already saved in folder.
+def load_record(folder):
+    """The folder's record: {"tracks": {"youtube <id>": file name}, "artists": {id: artist},
+    "album_artist": ..., "cover_sha": ...}.
 
-    Entries whose file is gone (deleted or renamed by hand) are dropped, so those videos
+    Tracks whose file is gone (deleted or renamed by hand) are dropped, so those videos
     can be downloaded again."""
     try:
         with open(os.path.join(folder, TRACKS_FILE), encoding="utf-8") as f:
-            tracks = json.load(f).get("tracks", {})
-    except (OSError, ValueError, AttributeError):
-        return {}
-    if not isinstance(tracks, dict):
-        return {}
-    return {k: v for k, v in tracks.items()
-            if isinstance(k, str) and isinstance(v, str) and "/" not in v
-            and os.path.isfile(os.path.join(folder, v))}
+            data = json.load(f)
+        if not isinstance(data, dict):
+            raise ValueError
+    except (OSError, ValueError):
+        data = {}
+    tracks = data.get("tracks") if isinstance(data.get("tracks"), dict) else {}
+    tracks = {k: v for k, v in tracks.items()
+              if isinstance(k, str) and isinstance(v, str) and "/" not in v
+              and os.path.isfile(os.path.join(folder, v))}
+    artists = data.get("artists") if isinstance(data.get("artists"), dict) else {}
+    record = {"tracks": tracks,
+              "artists": {k: v for k, v in artists.items() if k in tracks and isinstance(v, str)}}
+    for key in ("album_artist", "cover_sha"):
+        if isinstance(data.get(key), str):
+            record[key] = data[key]
+    return record
 
 
-def save_track_map(folder, tracks):
+def load_track_map(folder):
+    """{"youtube <id>": file name} of the videos already saved in folder."""
+    return load_record(folder)["tracks"]
+
+
+def save_record(folder, record):
     path = os.path.join(folder, TRACKS_FILE)
     tmp = path + ".tmp"
     with open(tmp, "w", encoding="utf-8") as f:
-        json.dump({"version": 1, "tracks": tracks}, f, indent=1, ensure_ascii=False)
+        json.dump(dict(record, version=1), f, indent=1, ensure_ascii=False)
     os.replace(tmp, path)
 
 
 def parse_saved_lines(stdout):
-    """[(archive key, path)] from yt-dlp's SAVED_PRINT lines, in order."""
+    """[(archive key, path, info)] from yt-dlp's SAVED_PRINT lines, in order."""
     saved = []
     for line in stdout.splitlines():
-        parts = line.rstrip("\r\n").split("\t", 3)
-        if len(parts) == 4 and parts[0] == "MDJ" and parts[3]:
-            saved.append((f"{parts[1].lower()} {parts[2]}", parts[3]))
+        parts = line.rstrip("\r\n").split("\t", 4)
+        if len(parts) >= 4 and parts[0] == "MDJ" and parts[3]:
+            try:
+                info = json.loads(parts[4]) if len(parts) == 5 else {}
+            except ValueError:
+                info = {}
+            saved.append((f"{parts[1].lower()} {parts[2]}", parts[3], info if isinstance(info, dict) else {}))
     return saved
 
 
@@ -286,6 +306,266 @@ def safe_folder_name(name):
     """Album/Folder name usable as one folder: no "/" (would make sub-folders), no "." / ".."."""
     name = name.strip().replace("/", "-").replace("\0", "")
     return "" if name in (".", "..") else name
+
+
+# ---- Tags and covers for music players, phones and car stereos ----
+# Players group songs by the album tag and sort them by the track tag (not by folder or file
+# names), and show the picture stored inside the file. MP3 tags are written as ID3v2.3, which
+# older devices and Windows read (many can't read v2.4); covers are small square baseline JPEGs.
+AUDIO_TAG_EXTS = (".mp3", ".m4a", ".flac", ".opus", ".ogg", ".wav")
+COVER_SIZE = 500
+COVER_FILE = "cover.jpg"
+VARIOUS_ARTISTS = "Various Artists"
+
+
+_default_cover = []
+
+
+def default_cover():
+    """The MDJ logo cover (icons/mdj-cover.jpg) as JPEG bytes, for songs whose source has no
+    picture (or whose thumbnail failed). None if the file is missing."""
+    if not _default_cover:
+        try:
+            with open(resource_path("icons", "mdj-cover.jpg"), "rb") as f:
+                _default_cover.append(f.read())
+        except OSError:
+            _default_cover.append(None)
+    return _default_cover[0]
+
+
+def song_meta(info, album=""):
+    """Tag values from yt-dlp's info: title, artist, album, date."""
+    def first(*keys):
+        for k in keys:
+            v = info.get(k)
+            if isinstance(v, list):
+                v = v[0] if v else None
+            if v:
+                return str(v).strip()
+        return ""
+    artist = first("artist", "artists", "creator", "uploader", "channel")
+    if artist.endswith(" - Topic"):              # YouTube's auto-generated artist channels
+        artist = artist[:-len(" - Topic")]
+    year = first("release_year") or first("upload_date")[:4]
+    return {"title": first("track", "title"), "artist": artist,
+            "album": album or first("album"), "date": year}
+
+
+def make_square_cover(src, dst):
+    """Centre square of a thumbnail, COVER_SIZE px, baseline JPEG. True when made."""
+    ffmpeg = shutil.which("ffmpeg")
+    if not ffmpeg or not os.path.isfile(src):
+        return False
+    r = subprocess.run([ffmpeg, "-v", "error", "-y", "-i", src, "-frames:v", "1", "-vf",
+                        f"crop='min(iw,ih)':'min(iw,ih)',scale={COVER_SIZE}:{COVER_SIZE}:flags=lanczos",
+                        "-q:v", "3", "-pix_fmt", "yuvj420p", dst],
+                       capture_output=True, env=external_env())
+    return r.returncode == 0 and os.path.isfile(dst)
+
+
+def _flac_picture(data):
+    from mutagen.flac import Picture
+    pic = Picture()
+    pic.type, pic.mime, pic.desc, pic.data = 3, "image/jpeg", "Cover (front)", data
+    pic.width = pic.height = COVER_SIZE
+    pic.depth = 24
+    return pic
+
+
+def write_tags(path, meta=None, cover=None, track=None, album_artist=None, compilation=False):
+    """Write tags (only the values given) and the cover (JPEG bytes) into an audio file.
+
+    meta: {"title", "artist", "album", "date"}. Returns True when the file was tagged."""
+    import base64
+    meta = {k: v for k, v in (meta or {}).items() if v}
+    ext = os.path.splitext(path)[1].lower()
+    try:
+        if ext in (".mp3", ".wav"):
+            from mutagen import id3
+            if ext == ".mp3":
+                try:
+                    tags = id3.ID3(path)
+                except id3.ID3NoHeaderError:
+                    tags = id3.ID3()
+            else:
+                from mutagen.wave import WAVE
+                wav = WAVE(path)
+                if wav.tags is None:
+                    wav.add_tags()
+                tags = wav.tags
+            frames = {"title": id3.TIT2, "artist": id3.TPE1, "album": id3.TALB, "date": id3.TDRC}
+            for key, frame in frames.items():
+                if key in meta:
+                    tags.setall(frame.__name__, [frame(encoding=1, text=meta[key])])
+            if track:
+                tags.setall("TRCK", [id3.TRCK(encoding=1, text=str(track))])
+            if album_artist is not None:
+                tags.delall("TPE2")
+                tags.delall("TCMP")
+                if album_artist:
+                    tags.add(id3.TPE2(encoding=1, text=album_artist))
+                if compilation:
+                    tags.add(id3.TCMP(encoding=1, text="1"))
+            if cover and ext == ".mp3":
+                tags.delall("APIC")
+                tags.add(id3.APIC(encoding=1, mime="image/jpeg", type=3, desc="Cover", data=cover))
+            if ext == ".mp3":
+                tags.save(path, v2_version=3)    # ID3v2.3: readable by older players and cars
+            else:
+                wav.save(v2_version=3)
+        elif ext == ".m4a":
+            from mutagen.mp4 import MP4, MP4Cover
+            f = MP4(path)
+            if f.tags is None:
+                f.add_tags()
+            for key, atom in (("title", "\xa9nam"), ("artist", "\xa9ART"), ("album", "\xa9alb"),
+                              ("date", "\xa9day")):
+                if key in meta:
+                    f.tags[atom] = [meta[key]]
+            if track:
+                f.tags["trkn"] = [(int(track), 0)]
+            if album_artist is not None:
+                f.tags.pop("aART", None)
+                f.tags.pop("cpil", None)
+                if album_artist:
+                    f.tags["aART"] = [album_artist]
+                if compilation:
+                    f.tags["cpil"] = True
+            if cover:
+                f.tags["covr"] = [MP4Cover(cover, imageformat=MP4Cover.FORMAT_JPEG)]
+            f.save()
+        elif ext in (".flac", ".opus", ".ogg"):
+            if ext == ".flac":
+                from mutagen.flac import FLAC as Kind
+            elif ext == ".opus":
+                from mutagen.oggopus import OggOpus as Kind
+            else:
+                from mutagen.oggvorbis import OggVorbis as Kind
+            f = Kind(path)
+            if f.tags is None:
+                f.add_tags()
+            for key in ("title", "artist", "album", "date"):
+                if key in meta:
+                    f.tags[key] = [meta[key]]
+            if track:
+                f.tags["tracknumber"] = [str(track)]
+            if album_artist is not None:
+                for k in ("albumartist", "compilation"):
+                    if k in f.tags:
+                        del f.tags[k]
+                if album_artist:
+                    f.tags["albumartist"] = [album_artist]
+                if compilation:
+                    f.tags["compilation"] = ["1"]
+            if cover:
+                pic = _flac_picture(cover)
+                if ext == ".flac":
+                    f.clear_pictures()
+                    f.add_picture(pic)
+                else:
+                    f.tags["metadata_block_picture"] = [base64.b64encode(pic.write()).decode("ascii")]
+            f.save()
+        else:
+            return False
+        return True
+    except Exception as e:                       # a tag problem must never fail the download
+        debug(f"Warning: Could not tag {path}: {e}", level="WARN")
+        return False
+
+
+def read_cover(path):
+    """The cover picture stored in an audio file (bytes), or None."""
+    import base64
+    ext = os.path.splitext(path)[1].lower()
+    try:
+        if ext == ".mp3":
+            from mutagen.id3 import ID3
+            pics = ID3(path).getall("APIC")
+            return pics[0].data if pics else None
+        if ext == ".m4a":
+            from mutagen.mp4 import MP4
+            covr = (MP4(path).tags or {}).get("covr")
+            return bytes(covr[0]) if covr else None
+        if ext == ".flac":
+            from mutagen.flac import FLAC
+            pics = FLAC(path).pictures
+            return pics[0].data if pics else None
+        if ext in (".opus", ".ogg"):
+            from mutagen.flac import Picture
+            if ext == ".opus":
+                from mutagen.oggopus import OggOpus as Kind
+            else:
+                from mutagen.oggvorbis import OggVorbis as Kind
+            raw = (Kind(path).tags or {}).get("metadata_block_picture")
+            return Picture(base64.b64decode(raw[0])).data if raw else None
+    except Exception:
+        return None
+    return None
+
+
+def album_artist_for(artists):
+    """One artist for the whole album folder: theirs if all songs share it, else Various Artists."""
+    names = {a.strip() for a in artists if a and a.strip()}
+    if len(names) == 1:
+        return names.pop(), False
+    return (VARIOUS_ARTISTS, True) if names else ("", False)
+
+
+def make_album_cover(folder, song_files, record):
+    """Write the folder's cover.jpg from its songs' covers (in playlist order).
+
+    One cover, or 2-3 different ones: the first song's. 4 or more different covers: a 2x2 grid
+    of the first four. A cover.jpg the user put there is never replaced (its checksum differs
+    from the one recorded when MDJ made it). Returns True when cover.jpg was (re)written."""
+    import hashlib
+    path = os.path.join(folder, COVER_FILE)
+    if os.path.exists(path):
+        try:
+            with open(path, "rb") as f:
+                current = hashlib.sha1(f.read()).hexdigest()
+        except OSError:
+            return False
+        if current != record.get("cover_sha"):
+            return False                          # the user's own cover
+    covers, seen = [], set()
+    logo = default_cover()
+    logo_sha = hashlib.sha1(logo).hexdigest() if logo else None
+    for name in song_files:
+        data = read_cover(os.path.join(folder, name))
+        if data:
+            h = hashlib.sha1(data).hexdigest()
+            if h not in seen and h != logo_sha:    # real covers only; the logo is the fallback
+                seen.add(h)
+                covers.append(data)
+    if not covers:
+        if not logo or logo_sha not in {hashlib.sha1(read_cover(os.path.join(folder, n)) or b"").hexdigest()
+                                        for n in song_files}:
+            return False
+        covers = [logo]                           # no song has its own picture: the MDJ logo
+    tmp = path + ".tmp.jpg"
+    if len(covers) >= 4 and shutil.which("ffmpeg"):
+        tile = COVER_SIZE // 2
+        with tempfile.TemporaryDirectory(prefix="mdj-cover-") as d:
+            inputs = []
+            for i, data in enumerate(covers[:4]):
+                p = os.path.join(d, f"{i}.jpg")
+                with open(p, "wb") as f:
+                    f.write(data)
+                inputs += ["-i", p]
+            graph = (";".join(f"[{i}:v]scale={tile}:{tile}:flags=lanczos,setsar=1[t{i}]" for i in range(4)) +
+                     ";[t0][t1]hstack[top];[t2][t3]hstack[bottom];[top][bottom]vstack[out]")
+            r = subprocess.run([shutil.which("ffmpeg"), "-v", "error", "-y", *inputs, "-filter_complex", graph,
+                                "-map", "[out]", "-frames:v", "1", "-q:v", "3", "-pix_fmt", "yuvj420p", tmp],
+                               capture_output=True, env=external_env())
+            if r.returncode != 0:
+                return False
+    else:
+        with open(tmp, "wb") as f:
+            f.write(covers[0])
+    with open(tmp, "rb") as f:
+        record["cover_sha"] = hashlib.sha1(f.read()).hexdigest()
+    os.replace(tmp, path)
+    return True
 
 
 _portal_version = []
@@ -507,6 +787,16 @@ def overridden_settings(args):
                 takes_value = names[name] and "=" not in a and i + 1 < len(args)
                 found[key] = f"{a} {args[i + 1]}" if takes_value else a
     return found
+
+
+def effective_flag(cfg, custom_args, key):
+    """A Basic on/off setting (embed_thumbnail / embed_metadata) as downloads really use it:
+    a later --embed-... / --no-embed-... in Custom arguments wins."""
+    value = bool(cfg.get(key))
+    for a in custom_args:
+        if a in BASIC_OVERRIDES.get(key, {}):
+            value = not a.startswith("--no-")
+    return value
 
 
 def effective_audio_format(cfg):
@@ -2190,8 +2480,8 @@ class MusicDownloader:
                 "--merge-output-format", "mp4",
                 "--recode-video", "mp4"
             ],
-            "embed_thumbnail": False,   # cover art inside the file (--embed-thumbnail)
-            "embed_metadata": False,    # title/artist/date tags (--embed-metadata)
+            "embed_thumbnail": True,    # cover art in songs (written by the app; not for videos)
+            "embed_metadata": True,     # title/artist/date tags (songs: by the app; videos: yt-dlp)
             "cookies_browser": "",      # --cookies-from-browser <name>; "" = off
             "custom_args": []  # User's custom arguments (applied to all downloads)
         }
@@ -2266,10 +2556,12 @@ class MusicDownloader:
             command.extend(["-f", video_quality])
             command.extend(cfg.get("video_extra_args", []))
 
-        # Options from the Basic tab of yt-dlp Settings
-        if cfg.get("embed_thumbnail"):
-            command.append("--embed-thumbnail")
-        if cfg.get("embed_metadata"):
+        # Options from the Basic tab of yt-dlp Settings. For audio the app writes the tags and a
+        # square cover itself after the download (see write_tags), in a form older players read.
+        # Videos get no cover from "Add cover art to songs": an MP4 already shows its own picture,
+        # and an extra cover picture confuses some TVs and car screens (--embed-thumbnail in
+        # Custom arguments still adds one).
+        if not is_audio and cfg.get("embed_metadata"):
             command.append("--embed-metadata")
         if cfg.get("cookies_browser") and not IS_FLATPAK:   # the sandbox can't read browser profiles
             command.extend(["--cookies-from-browser", cfg["cookies_browser"]])
@@ -2278,6 +2570,9 @@ class MusicDownloader:
         # playlist links still download the whole list. (--yes-playlist in Custom arguments
         # comes later and wins.)
         command.append("--no-playlist")
+        # File names that also work on USB sticks / SD cards (FAT32, exFAT) used in car stereos
+        # and MP3 players: no ? : " * | < > (Linux allows them, those drives don't)
+        command.append("--windows-filenames")
 
         # Add custom user arguments
         command.extend(normalize_args(cfg.get("custom_args", [])))
@@ -2664,7 +2959,21 @@ class MusicDownloader:
             existed_before = set()
         # Videos already saved in this folder (also after numbering renamed them) are skipped:
         # yt-dlp gets them as a download archive, built fresh from the folder's record.
-        tracks = load_track_map(download_dir)
+        record = load_record(download_dir)
+        tracks = record["tracks"]
+        album_mode = bool(safe_folder_name(album_name or ""))
+        cfg = self.ytdlp_config
+        custom = normalize_args(cfg.get("custom_args", []))
+        # Songs follow "Add cover art to songs" / "Add title, artist and date tags" (both on by
+        # default). Album folders always get the album and track-number tags: players need
+        # those two to show the songs as one album, in order.
+        song_tags = is_audio and effective_flag(cfg, custom, "embed_metadata")
+        want_tags = is_audio and (album_mode or song_tags)
+        want_cover = is_audio and effective_flag(cfg, custom, "embed_thumbnail")
+        thumb_dir = tempfile.mkdtemp(prefix="mdj-thumbs-") if want_cover else None
+        if thumb_dir:
+            command[1:1] = ["--write-thumbnail", "--convert-thumbnails", "jpg",
+                            "-o", f"thumbnail:{thumb_dir}/%(id)s.%(ext)s"]
         archive_fd, archive_path = tempfile.mkstemp(prefix="mdj-archive-", suffix=".txt")
         with os.fdopen(archive_fd, "w", encoding="utf-8") as f:
             f.writelines(key + "\n" for key in tracks)
@@ -2697,12 +3006,15 @@ class MusicDownloader:
             # Files this link saved. Handled even when yt-dlp reports an error: in a playlist
             # it skips an unavailable video, saves the others and only then exits with an error.
             folder = os.path.realpath(download_dir)
-            saved = [(key, path) for key, path in parse_saved_lines(stdout)
+            saved = [(key, path, info) for key, path, info in parse_saved_lines(stdout)
                      if os.path.isabs(path) and os.path.isfile(path)
                      and os.path.dirname(os.path.realpath(path)) == folder]
             new_files = 0
-            for key, path in saved:
+            album_tag = os.path.basename(os.path.normpath(download_dir)) if album_mode else ""
+            tagged_now = []          # files tagged in this run (never files the user had already)
+            for key, path, info in saved:
                 name = os.path.basename(path)
+                what = "new"
                 if name not in existed_before:
                     new_files += 1
                 if numbering:
@@ -2714,16 +3026,64 @@ class MusicDownloader:
                     except OSError as e:
                         debug(f"Warning: Could not number {path}: {e}", level="WARN")
                 tracks[key] = os.path.basename(path)
+                if what == "duplicate" or not (want_tags or want_cover) \
+                        or not path.lower().endswith(AUDIO_TAG_EXTS):
+                    continue
+                meta = song_meta(info, album_tag)
+                record["artists"][key] = meta["artist"]     # also "": marks files MDJ tagged
+                cover = None
+                if want_cover:
+                    vid = key.split(" ", 1)[1]
+                    thumb = os.path.join(thumb_dir, vid + ".jpg")
+                    square = os.path.join(thumb_dir, vid + ".cover.jpg")
+                    if make_square_cover(thumb, square):
+                        with open(square, "rb") as f:
+                            cover = f.read()
+                    else:
+                        cover = default_cover()   # no picture from the source: the MDJ logo
+                if not song_tags:                 # album folder with tags off: album name only
+                    meta = {"album": meta["album"]}
+                write_tags(path, meta if want_tags else None, cover,
+                           track=track_number_of(os.path.basename(path)) if want_tags else None)
+                tagged_now.append(path)
+            if thumb_dir and not any(a.startswith("--write-thumbnail") or a == "--write-all-thumbnails"
+                                     for a in custom):
+                # yt-dlp first writes the thumbnail next to the song and moves it to thumb_dir at
+                # the end; a download that fails in between leaves it behind. Remove images that
+                # appeared in the folder during this download (never ones that were there before).
+                try:
+                    for name in os.listdir(download_dir):
+                        if (name not in existed_before and name != COVER_FILE
+                                and name.lower().endswith((".jpg", ".jpeg", ".webp", ".png"))):
+                            os.remove(os.path.join(download_dir, name))
+                except OSError:
+                    pass
+            if saved and album_mode and song_tags:
+                # One album artist for the whole folder, so players keep the album together
+                # (only files MDJ tagged: those in record["artists"])
+                artist, compilation = album_artist_for(record["artists"].values())
+                if artist != record.get("album_artist"):
+                    retag = [os.path.join(download_dir, tracks[k]) for k in record["artists"] if k in tracks]
+                    record["album_artist"] = artist
+                else:
+                    retag = tagged_now
+                for path in retag:
+                    write_tags(path, album_artist=artist, compilation=compilation)
             if saved:
                 try:
-                    save_track_map(download_dir, tracks)
+                    save_record(download_dir, record)
                 except OSError as e:
                     debug(f"Warning: Could not save the track record: {e}", level="WARN")
-            if saved and safe_folder_name(album_name or ""):
+            if saved and album_mode:
                 try:
-                    write_album_playlist(download_dir)
+                    playlist = write_album_playlist(download_dir)
+                    if is_audio and playlist:
+                        with open(playlist, encoding="utf-8") as f:
+                            order = [l.strip() for l in f if l.strip() and not l.startswith("#")]
+                        if want_cover and make_album_cover(download_dir, order, record):
+                            save_record(download_dir, record)
                 except OSError as e:
-                    debug(f"Warning: Could not write the playlist: {e}", level="WARN")
+                    debug(f"Warning: Could not write the playlist or cover: {e}", level="WARN")
 
             if proc.returncode != 0:
                 # Parse error and show user-friendly message instead of raw stderr
@@ -2757,6 +3117,8 @@ class MusicDownloader:
                 os.remove(archive_path)
             except OSError:
                 pass
+            if thumb_dir:
+                shutil.rmtree(thumb_dir, ignore_errors=True)
             if self.download_process is not None and self.download_process is locals().get("proc"):
                 self.download_process = None
             if queue_index < 0 and current():
@@ -3092,8 +3454,11 @@ class MusicDownloader:
             section(basic, "Extras")
             thumb_var = ctk.BooleanVar(value=bool(cfg.get("embed_thumbnail")))
             meta_var = ctk.BooleanVar(value=bool(cfg.get("embed_metadata")))
-            check(basic, "Add cover art (the video thumbnail) to the file", thumb_var, "embed_thumbnail")
+            check(basic, "Add cover art to songs (the video's picture, or the MDJ logo)", thumb_var,
+                  "embed_thumbnail")
             check(basic, "Add title, artist and date tags", meta_var, "embed_metadata")
+            hint(basic, "Songs in an album folder always get the album name and track number, so "
+                        "players, phones and car stereos keep them together and in order.")
 
             cookies_var = ctk.StringVar(value=cfg.get("cookies_browser") or "Off")
             if not IS_FLATPAK:              # the Flatpak sandbox can't read browser profiles
@@ -3155,10 +3520,11 @@ class MusicDownloader:
             mode_var = ctk.StringVar(value="Audio")
             ctk.CTkSegmentedButton(adv, values=["Audio", "Video"], variable=mode_var,
                                    command=lambda v: refresh()).pack(anchor="w", pady=(0, 4))
-            preview = ctk.CTkTextbox(adv, height=96, wrap="word", activate_scrollbars=False,
+            preview = ctk.CTkTextbox(adv, height=120, wrap="word", activate_scrollbars=False,
                                      font=ctk.CTkFont(family="Monospace", size=11))
             preview.pack(fill="x")
             preview.tag_config("custom", foreground=ACCENT_FG)
+            preview.tag_config("note", foreground="#8a949c")
             hint(adv, "Updates as you change either tab. Your custom arguments are highlighted.")
 
             section(adv, "Video format code (-f)")
@@ -3223,6 +3589,15 @@ class MusicDownloader:
                 elif custom:
                     preview.insert("end", shlex.join(custom) + " ", "custom")
                 preview.insert("end", shlex.join(base[k:]))
+                if mode_var.get() == "Audio":
+                    # audio covers and tags are written by the app after the download
+                    adds = [label for key, label in (("embed_thumbnail", "cover art"),
+                                                     ("embed_metadata", "title/artist tags"))
+                            if effective_flag(c, custom or [], key)]
+                    note = ("After the download, MDJ adds: " + ", ".join(adds) + "." if adds else "")
+                    note += (" " if note else "") + ("Album folders also get the album name and "
+                                                     "track number.")
+                    preview.insert("end", "\n\n" + note, "note")
                 preview.configure(state="disabled")
 
             def schedule_refresh(*_):
@@ -3332,14 +3707,36 @@ class MusicDownloader:
                         apply(common, custom)
                 check_args(common + custom, done)
 
+            def show_defaults():
+                """Put every control back to its default, save, and keep the window open."""
+                if not settings_window.winfo_exists():
+                    return
+                d = self.get_default_ytdlp_config()
+                audio_fmt_var.set(d["audio_format"])
+                audio_q_var.set(q_by_value.get(d["audio_quality"], AUDIO_QUALITIES[0][0]))
+                video_entry.delete(0, "end")
+                video_entry.insert(0, d["video_quality"])
+                video_var.set(preset_label_for(d["video_quality"]))
+                thumb_var.set(bool(d["embed_thumbnail"]))
+                meta_var.set(bool(d["embed_metadata"]))
+                cookies_var.set(d["cookies_browser"] or "Off")
+                custom_text.delete("1.0", "end")
+                placeholder["on"] = False
+                show_help()                       # empty again: the step-by-step help comes back
+                common_text.delete("1.0", "end")
+                common_text.insert("1.0", args_to_text(d["common_args"]))
+                status.configure(text="")
+                self.ytdlp_config = d
+                self.save_config()
+                self.update_type_summary()
+                tabs.set("Basic")
+                on_tab_change()
+                TooltipNotification(settings_window, "✓ Settings reset to defaults", 2000)
+
             def reset_defaults():
-                if messagebox.askyesno("Reset Settings", "Reset all yt-dlp settings to defaults?",
-                                       parent=settings_window):
-                    self.ytdlp_config = self.get_default_ytdlp_config()
-                    self.save_config()
-                    self.update_type_summary()
-                    settings_window.destroy()
-                    TooltipNotification(self.root, "✓ Settings reset to defaults", 2000)
+                self.ask_confirm(settings_window, "Reset Settings",
+                                 "Reset all yt-dlp settings to their defaults?",
+                                 "Yes, Reset", show_defaults)
 
             # Buttons: one row, always visible below the tabs
             button_frame = ctk.CTkFrame(frame, fg_color="transparent")
@@ -3686,6 +4083,37 @@ class MusicDownloader:
         except Exception as e:
             log_error(f"Closing the window failed: {e!r}")
             os._exit(0)
+
+    def ask_confirm(self, parent, title, message, yes_text, on_yes):
+        """App-styled Yes/Cancel question over `parent` (same look as Clear Queue).
+        Calls on_yes() after the question has closed."""
+        win = ctk.CTkToplevel(parent)
+        win.title(title)
+        win.transient(parent)
+        win.attributes("-topmost", True)
+        parent.update_idletasks()
+        w, h = 400, 200
+        x = parent.winfo_rootx() + (parent.winfo_width() - w) // 2
+        y = parent.winfo_rooty() + (parent.winfo_height() - h) // 2
+        win.geometry(f"{w}x{h}+{x}+{y}")
+        frame = ctk.CTkFrame(win, corner_radius=15)
+        frame.pack(expand=True, fill="both", padx=15, pady=15)
+        ctk.CTkLabel(frame, text=title, font=ctk.CTkFont(size=18), text_color="#ff9800").pack(pady=(15, 10))
+        ctk.CTkLabel(frame, text=message, font=ctk.CTkFont(size=13), wraplength=350).pack(pady=10)
+        buttons = ctk.CTkFrame(frame, fg_color="transparent")
+        buttons.pack(pady=(10, 15), fill="x", padx=20)
+
+        def yes():
+            win.destroy()
+            parent.after(30, on_yes)
+
+        ctk.CTkButton(buttons, text=yes_text, height=35, fg_color="#d32f2f", hover_color="#b71c1c",
+                      text_color=LIGHT_TEXT, command=yes).pack(side="left", expand=True, fill="x", padx=(0, 10))
+        ctk.CTkButton(buttons, text="Cancel", height=35, fg_color="transparent", border_width=1,
+                      text_color=LIGHT_TEXT, hover_color=ACCENT_DIM,
+                      command=win.destroy).pack(side="right", expand=True, fill="x", padx=(5, 0))
+        win.bind("<Escape>", lambda e: win.destroy())
+        win.after(50, lambda: win.winfo_exists() and (win.lift(), win.focus_force()))
 
     def show_error_dialog(self, title, message):
         error_window = ctk.CTkToplevel(self.root)

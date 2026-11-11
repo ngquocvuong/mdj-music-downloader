@@ -16,12 +16,19 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 - Under **Download Type**, a small line shows what the selected type saves as, e.g. "MP3 · best quality" or "MP4 · up to 1080p".
 - **Songs already in a folder are not downloaded again**, even after track numbering renamed them. Retrying a playlist only tries the songs that are missing. A song you deleted can be downloaded again. Downloading a song you already have says "Already downloaded". (Each download folder keeps a small hidden record, `.mdj-tracks.json`.)
 - In the Flatpak on older desktops (e.g. Linux Mint 21), **Import** shows the queue files in your Output Folder to pick from, with "Other folder..." for the system file chooser. Their file chooser can't open a chosen folder directly.
+- **Songs get cover art and tags, and albums look like albums on music players, phones and car stereos.** "Add cover art to songs" and "Add title, artist and date tags" (yt-dlp Settings, Basic tab) are now on by default. Songs get a square cover picture and title, artist and year tags; songs in an Album/Folder also get the album name (the folder name) and their track number, which players use to keep an album together and in order (these two are always written, even with tags off). MP3 tags are written as ID3v2.3, and covers are small (500 px) standard JPEGs, which older devices and Windows can read.
+  - The folder also gets a `cover.jpg`: the shared cover when all songs have the same one, otherwise the first song's, and a 2×2 grid of the first four covers when there are four or more different ones. A `cover.jpg` you put there yourself is never replaced.
+  - If the album has songs by different artists, its album artist is "Various Artists" and it is marked as a compilation, so players keep it together instead of splitting it into one album per artist.
+  - Songs whose source has no picture (or whose picture could not be downloaded) get the MDJ logo as their cover. The folder's `cover.jpg` only uses the logo when no song has a real cover, and switches to a real one as soon as a song with a picture is added.
+  - Videos get title, artist and date tags, but no extra cover picture: a video shows its own picture, and an embedded cover confuses some TVs and car screens. Add `--embed-thumbnail` in Custom arguments to get one anyway.
 - Lists (the queue, Supported Sites, settings) scroll with the mouse wheel.
 
 ### Changed
 - Default download folder is now `~/Music/MDJ Downloads`. If your settings still used the old default (`~/Music/YouTube MP3`), they switch to the new one; folders you chose yourself are kept.
 - A link to a song inside a playlist (`watch?v=...&list=...`, including YouTube Mixes) now downloads **only that song**. Playlist links still download the whole list. Add `--yes-playlist` in Custom arguments to get the old behaviour.
 - The Download Type buttons now just say **Audio** and **Video**.
+- **Reset to Defaults** in yt-dlp Settings asks in the app's own style (instead of a plain system box) and keeps the window open, showing the default settings.
+- File names now also work on USB sticks and SD cards used in car stereos and MP3 players: characters those drives don't allow (`? : " * | < >`) are replaced, e.g. "AC/DC: Back in Black" is saved as "AC_DC - Back in Black". The title tag keeps the real title.
 - "URL pasted" and "Added to queue" messages show only the first time per session. Notifications are smaller, and only one shows at a time.
 - Quieter **?** (Supported Sites) button: a small grey circle that turns teal under the mouse.
 - Thinner borders on buttons, panels, text fields and checkboxes.

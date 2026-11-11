@@ -6,7 +6,8 @@ a = Analysis(
     pathex=[],
     binaries=[],
     datas=[('icons', 'icons')],
-    hiddenimports=[],
+    hiddenimports=['mutagen', 'mutagen.id3', 'mutagen.mp4', 'mutagen.flac', 'mutagen.oggopus',
+                   'mutagen.oggvorbis', 'mutagen.wave'],   # tags + covers (imported inside functions)
     hookspath=[],
     hooksconfig={},
     runtime_hooks=[],
