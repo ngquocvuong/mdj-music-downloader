@@ -146,6 +146,148 @@ def native_dialog_command(kind, title, initialdir, filetypes=None, parent_xid=No
     return None
 
 
+# ---- Album folders: track numbers ("01.Title.mp3") and the .m3u playlist ----
+MEDIA_EXTS = (".mp3", ".m4a", ".opus", ".ogg", ".flac", ".wav", ".aac", ".alac",
+              ".mp4", ".mkv", ".webm", ".mov")
+# "01.Song", "7.Song", "120.Song". Not "99.9 FM" (a digit right after the dot).
+_TRACK_RE = re.compile(r"^(\d{1,3})\.(?!\d)")
+
+
+def is_media_file(name):
+    return name.lower().endswith(MEDIA_EXTS) and not name.startswith(".")
+
+
+def track_number_of(name):
+    """Track number of a numbered media file name, else None."""
+    m = _TRACK_RE.match(name)
+    return int(m.group(1)) if m and is_media_file(name) else None
+
+
+def strip_track_prefix(name):
+    """"01.Song.mp3" / "1. Song.mp3" -> "Song.mp3". Names that would end up empty are kept."""
+    rest = re.sub(r"^\d{1,3}\.(?!\d)\s*", "", name)
+    return rest if os.path.splitext(rest)[0].strip() else name
+
+
+def next_track_number(folder):
+    """One more than the highest track number in folder (1 for none). Gaps are not refilled,
+    so a new song never takes a number that belonged to another one."""
+    try:
+        numbers = [track_number_of(f) for f in os.listdir(folder)]
+    except OSError:
+        return 1
+    return max([n for n in numbers if n is not None], default=0) + 1
+
+
+def number_downloaded_file(path, existed_before):
+    """Give a downloaded file the next track number in its folder.
+
+    existed_before: the file was already there before this download (yt-dlp skipped it).
+    Returns (final path, what happened): "numbered", "kept" (already numbered, or nothing
+    to do) or "duplicate" (the album already has this title under a number; the new copy
+    is removed, the way yt-dlp itself skips a title that is already in the folder)."""
+    folder, name = os.path.split(path)
+    if existed_before and track_number_of(name) is not None:
+        return path, "kept"
+    clean = strip_track_prefix(name)
+    try:
+        others = os.listdir(folder)
+    except OSError:
+        return path, "kept"
+    for other in sorted(others):
+        if other != name and track_number_of(other) is not None and strip_track_prefix(other) == clean:
+            if existed_before:          # both were already there: leave the user's files alone
+                return path, "kept"
+            try:
+                os.remove(path)
+            except OSError:
+                return path, "kept"
+            return os.path.join(folder, other), "duplicate"
+    n = next_track_number(folder)
+    while True:
+        target = os.path.join(folder, f"{n:02d}.{clean}")
+        if not os.path.exists(target):  # rename() would silently replace an existing file
+            break
+        n += 1
+    os.rename(path, target)
+    return target, "numbered"
+
+
+def write_album_playlist(folder):
+    """(Re)write <folder name>.m3u: numbered tracks in number order, then the other songs
+    by name. Returns its path, or None when the folder has no songs."""
+    try:
+        names = [f for f in os.listdir(folder)
+                 if is_media_file(f) and os.path.isfile(os.path.join(folder, f))]
+    except OSError:
+        return None
+    if not names:
+        return None
+
+    def natural(s):
+        return [int(t) if t.isdigit() else t.lower() for t in re.split(r"(\d+)", s)]
+
+    def order(f):
+        n = track_number_of(f)
+        return (0, n, natural(f)) if n is not None else (1, 0, natural(f))
+
+    names.sort(key=order)
+    path = os.path.join(folder, os.path.basename(os.path.normpath(folder)) + ".m3u")
+    tmp = path + ".tmp"
+    with open(tmp, "w", encoding="utf-8") as f:
+        f.write("#EXTM3U\n")
+        for name in names:
+            f.write(name + "\n")
+    os.replace(tmp, path)
+    return path
+
+
+TRACKS_FILE = ".mdj-tracks.json"     # hidden, in each download folder
+# Printed by yt-dlp for every file it saves: "MDJ<tab>Youtube<tab><video id><tab><final path>"
+SAVED_PRINT = "after_move:MDJ\t%(extractor_key)s\t%(id)s\t%(filepath)s"
+
+
+def load_track_map(folder):
+    """{"youtube <id>": file name} of the videos already saved in folder.
+
+    Entries whose file is gone (deleted or renamed by hand) are dropped, so those videos
+    can be downloaded again."""
+    try:
+        with open(os.path.join(folder, TRACKS_FILE), encoding="utf-8") as f:
+            tracks = json.load(f).get("tracks", {})
+    except (OSError, ValueError, AttributeError):
+        return {}
+    if not isinstance(tracks, dict):
+        return {}
+    return {k: v for k, v in tracks.items()
+            if isinstance(k, str) and isinstance(v, str) and "/" not in v
+            and os.path.isfile(os.path.join(folder, v))}
+
+
+def save_track_map(folder, tracks):
+    path = os.path.join(folder, TRACKS_FILE)
+    tmp = path + ".tmp"
+    with open(tmp, "w", encoding="utf-8") as f:
+        json.dump({"version": 1, "tracks": tracks}, f, indent=1, ensure_ascii=False)
+    os.replace(tmp, path)
+
+
+def parse_saved_lines(stdout):
+    """[(archive key, path)] from yt-dlp's SAVED_PRINT lines, in order."""
+    saved = []
+    for line in stdout.splitlines():
+        parts = line.rstrip("\r\n").split("\t", 3)
+        if len(parts) == 4 and parts[0] == "MDJ" and parts[3]:
+            saved.append((f"{parts[1].lower()} {parts[2]}", parts[3]))
+    return saved
+
+
+def safe_folder_name(name):
+    """Album/Folder name usable as one folder: no "/" (would make sub-folders), no "." / ".."."""
+    name = name.strip().replace("/", "-").replace("\0", "")
+    return "" if name in (".", "..") else name
+
+
 _portal_version = []
 
 
@@ -379,6 +521,43 @@ def effective_audio_format(cfg):
     return fmt
 
 
+def download_summary(cfg, is_audio):
+    """Short text for under the Download Type switch, e.g. "MP3 · best quality".
+
+    Uses the values downloads really use: custom arguments win over the Basic tab."""
+    args = normalize_args(cfg.get("custom_args", []))
+
+    def last(names):
+        value = None
+        for i, a in enumerate(args):
+            name, eq, val = a.partition("=")
+            if name in names:
+                value = val if eq else (args[i + 1] if i + 1 < len(args) else None)
+        return value
+
+    over = overridden_settings(args)
+    if is_audio:
+        fmt = effective_audio_format(cfg)
+        if fmt in ("flac", "wav", "alac"):
+            detail = "lossless"
+        elif "audio_quality" in over:
+            detail = "quality " + (last({"--audio-quality"}) or "?")
+        else:
+            labels = {"0": "best quality", "2": "~192 kbps", "5": "~128 kbps", "9": "~64 kbps"}
+            detail = labels.get(str(cfg.get("audio_quality", "0")), "quality " + str(cfg.get("audio_quality")))
+    else:
+        fmt = last({"--recode-video", "--remux-video", "--merge-output-format"}) or "mp4"
+        if any(c in fmt for c in "/>"):
+            fmt = "custom"                  # rules like "webm>mkv/mp4"
+        code = cfg.get("video_quality", "") or DEFAULT_VIDEO_FORMAT
+        if "video_quality" in over:
+            detail = "custom format"
+        else:
+            detail = {c: lbl for lbl, c in VIDEO_PRESETS}.get(code.strip(), "custom format")
+            detail = detail[0].lower() + detail[1:]     # "Up to 1080p" -> "up to 1080p"
+    return f"{fmt.upper()} · {detail}"
+
+
 def normalize_args(items):
     """Turn saved argument lists into proper argv items.
 
@@ -496,6 +675,10 @@ def _apply_brand_theme():
     theme["CTkOptionMenu"]["text_color"] = [ACCENT_TEXT, ACCENT_TEXT]
     theme["CTkCheckBox"]["checkmark_color"] = [ACCENT_TEXT, ACCENT_TEXT]
     theme["CTkCheckBox"]["hover_color"] = [ACCENT_HOVER, ACCENT_HOVER]
+    # Thin outlines everywhere (CustomTkinter's defaults are 2-3 px, which looked heavy)
+    theme["CTkEntry"]["border_width"] = 1
+    theme["CTkCheckBox"]["border_width"] = 2
+    theme["CTkSegmentedButton"]["border_width"] = 1
 
 
 _apply_brand_theme()
@@ -868,7 +1051,7 @@ class MusicDownloader:
         # Fixed width (308 + 2x10 ipadx = 328 px, the width it always had at launch): its
         # contents must never resize the panels. Before, e.g. "Download Queue (12)" made
         # it 3 px wider and "Download" narrower again, leaving buttons drawn clipped.
-        left_frame = ctk.CTkFrame(content_frame, fg_color="transparent", border_width=2,
+        left_frame = ctk.CTkFrame(content_frame, fg_color="transparent", border_width=1,
                                   border_color=("#cccccc", "#444444"), corner_radius=10,
                                   width=LEFT_PANEL_WIDTH)
         left_frame.pack(side="left", fill="y", padx=(0, 8), ipadx=10, ipady=10)
@@ -878,7 +1061,7 @@ class MusicDownloader:
         debug("Creating right column...")
         # RIGHT COLUMN - Queue management (distinct background)
         right_frame = ctk.CTkFrame(content_frame, fg_color=("#f5f5f5", "#252525"),
-                                   corner_radius=10, border_width=2,
+                                   corner_radius=10, border_width=1,
                                    border_color=("#cccccc", "#444444"))
         right_frame.pack(side="right", fill="both", expand=True)
         debug("Right column created")
@@ -904,17 +1087,24 @@ class MusicDownloader:
         debug("URL label created")
         url_label.pack(side="left")
         # Small round "?" = Supported Sites (replaces the full-width button to save space)
+        # Quiet grey outline (teal on hover), so it doesn't compete with the main buttons
+        help_grey = "#7d8790"
         self.sites_help_btn = RoundIconButton(
             url_header,
             text="?",
-            width=20, height=20, corner_radius=10, border_spacing=0,
-            font=ctk.CTkFont(size=12, weight="bold"),
-            fg_color=ACCENT,
-            hover_color=ACCENT_HOVER,
-            text_color=ACCENT_TEXT,
+            width=16, height=16, corner_radius=8, border_spacing=0, border_width=1,
+            font=ctk.CTkFont(size=10, weight="bold"),
+            fg_color="transparent",
+            hover_color=ACCENT_DIM,
+            border_color=help_grey,
+            text_color=help_grey,
             command=self.show_supported_sites
         )
         self.sites_help_btn.pack(side="left", padx=(6, 0))
+        self.sites_help_btn.bind("<Enter>", lambda e: self.sites_help_btn.configure(
+            border_color=ACCENT_FG, text_color=ACCENT_FG), add="+")
+        self.sites_help_btn.bind("<Leave>", lambda e: self.sites_help_btn.configure(
+            border_color=help_grey, text_color=help_grey), add="+")
         HoverTip(self.sites_help_btn, "Supported sites")
         debug("URL label packed - CRITICAL POINT")
 
@@ -1002,7 +1192,7 @@ class MusicDownloader:
 
         self.audio_button = ctk.CTkButton(
             type_buttons,
-            text=f"Audio ({effective_audio_format(self.ytdlp_config).upper()})",
+            text="Audio",
             command=lambda: self._select_type("audio"),
             height=33,
             corner_radius=8,
@@ -1013,7 +1203,7 @@ class MusicDownloader:
 
         self.video_button = ctk.CTkButton(
             type_buttons,
-            text="Video (MP4)",
+            text="Video",
             command=lambda: self._select_type("video"),
             height=33,
             corner_radius=8,
@@ -1021,6 +1211,11 @@ class MusicDownloader:
             font=ctk.CTkFont(size=13, weight="bold")
         )
         self.video_button.pack(side="left", fill="x", expand=True, padx=(1, 3), pady=3)
+
+        # What the selected type saves as, in small grey text (set in yt-dlp Settings)
+        self.type_summary = ctk.CTkLabel(self.radio_frame, text="", height=16,
+                                         font=ctk.CTkFont(size=11), text_color="#7d8790")
+        self.type_summary.pack(anchor="w", padx=(4, 0), pady=(4, 0))
         self._select_type(self.download_type.get())
 
         # Button frame - Download/Cancel and Queue buttons
@@ -1065,7 +1260,7 @@ class MusicDownloader:
             font=ctk.CTkFont(size=15),
             corner_radius=10,
             fg_color="transparent",
-            border_width=2,
+            border_width=1,
             text_color=LIGHT_TEXT,
             hover_color=ACCENT_DIM
         )
@@ -1219,7 +1414,7 @@ class MusicDownloader:
             height=34,
             font=ctk.CTkFont(size=11),
             fg_color="transparent",
-            border_width=2,
+            border_width=1,
             border_color=("#d32f2f", "#f44336"),
             text_color=("#d32f2f", "#f44336"),
             hover_color=("#ffebee", "#4a1f1f")
@@ -1233,7 +1428,7 @@ class MusicDownloader:
             height=34,
             font=ctk.CTkFont(size=11),
             fg_color="transparent",
-            border_width=2,
+            border_width=1,
             text_color=LIGHT_TEXT,
             hover_color=ACCENT_DIM
         )
@@ -1246,7 +1441,7 @@ class MusicDownloader:
             height=34,
             font=ctk.CTkFont(size=11),
             fg_color="transparent",
-            border_width=2,
+            border_width=1,
             text_color=LIGHT_TEXT,
             hover_color=ACCENT_DIM
         )
@@ -1290,6 +1485,12 @@ class MusicDownloader:
         audio = type_value == "audio"
         self.audio_button.configure(**(on if audio else off))
         self.video_button.configure(**(off if audio else on))
+        self.update_type_summary()
+
+    def update_type_summary(self):
+        if getattr(self, "type_summary", None) is not None:
+            audio = self.download_type.get() == "audio"
+            self.type_summary.configure(text=download_summary(self.ytdlp_config, audio))
 
     def _queue_index_of(self, item_id):
         for i, item in enumerate(self.download_queue):
@@ -1335,6 +1536,13 @@ class MusicDownloader:
                     ))
                     self.show_saved_status("Saved to: ", msg_data, "#4caf50")
                     self._keep_status = True  # don't let the following "reset" clear it
+                elif msg_type == "already":
+                    self.progress_bar.stop()
+                    self.root.after(50, lambda: self.progress_bar.set(1.0))
+                    self.root.after(100, lambda: self.progress_label.configure(
+                        text="✓ Already downloaded", text_color="#4caf50"))
+                    self.show_saved_status("Already in: ", msg_data, "#4caf50")
+                    self._keep_status = True
                 elif msg_type == "error":
                     self.progress_bar.stop()
                     self.root.after(50, lambda: self.progress_label.configure(
@@ -2064,6 +2272,11 @@ class MusicDownloader:
         if cfg.get("cookies_browser") and not IS_FLATPAK:   # the sandbox can't read browser profiles
             command.extend(["--cookies-from-browser", cfg["cookies_browser"]])
 
+        # A link to a song inside a playlist (watch?v=...&list=...) downloads only that song;
+        # playlist links still download the whole list. (--yes-playlist in Custom arguments
+        # comes later and wins.)
+        command.append("--no-playlist")
+
         # Add custom user arguments
         command.extend(normalize_args(cfg.get("custom_args", [])))
 
@@ -2171,46 +2384,11 @@ class MusicDownloader:
                 )
                 threading.Thread(target=self.download_music,
                                  args=(item['url'], item['id'], self._download_options()),
-                                 kwargs={"run_id": self._run_id, "track_no": index + 1},
+                                 kwargs={"run_id": self._run_id},
                                  daemon=True).start()
                 return
 
         self.queue_processing_complete()
-
-    def create_playlist_for_album(self, album_folder, album_name):
-        """Create M3U playlist file for all songs in album folder"""
-        try:
-            # Get all audio/video files in the folder
-            audio_extensions = ('.mp3', '.mp4', '.m4a', '.flac', '.wav', '.ogg', '.webm', '.opus')
-            files = []
-
-            for filename in os.listdir(album_folder):
-                if filename.lower().endswith(audio_extensions):
-                    files.append(filename)
-
-            if not files:
-                return  # No audio files to create playlist
-
-            # Sort files naturally (so "1.Song" < "2.Song" < "10.Song")
-            import re
-            def natural_sort_key(s):
-                return [int(text) if text.isdigit() else text.lower()
-                        for text in re.split('([0-9]+)', s)]
-
-            files.sort(key=natural_sort_key)
-
-            # Create M3U playlist file
-            playlist_name = f"{album_name}.m3u" if album_name else "playlist.m3u"
-            playlist_path = os.path.join(album_folder, playlist_name)
-
-            with open(playlist_path, 'w', encoding='utf-8') as f:
-                f.write("#EXTM3U\n")  # M3U header
-                for filename in files:
-                    f.write(f"{filename}\n")
-
-            debug(f"Created playlist: {playlist_path} with {len(files)} songs")
-        except Exception as e:
-            debug(f"Warning: Could not create playlist: {e}", level="WARN")
 
     def queue_processing_complete(self):
         """Called when all queue items processed"""
@@ -2221,11 +2399,7 @@ class MusicDownloader:
         done_count = getattr(self, "_run_done", 0)
         failed_count = getattr(self, "_run_failed", 0)
 
-        # Create playlist if downloading to an album folder
-        album_name = self.album_entry.get().strip()
-        if album_name and done_count > 0:
-            album_folder = self.get_album_folder(self.output_dir, album_name)
-            self.create_playlist_for_album(album_folder, album_name)
+        # (The album playlist is updated after each download, see download_music)
 
         # Where the files went (same folder for the whole queue, incl. the Album/Folder subfolder)
         saved_dirs = list(getattr(self, "_queue_saved_dirs", []))  # folders used in this run
@@ -2364,7 +2538,9 @@ class MusicDownloader:
         if not album_name or not album_name.strip():
             return base_dir
 
-        album_name = album_name.strip()
+        album_name = safe_folder_name(album_name)
+        if not album_name:
+            return base_dir
 
         try:
             existing_items = os.listdir(base_dir)
@@ -2378,43 +2554,6 @@ class MusicDownloader:
         album_path = os.path.join(base_dir, album_name)
         os.makedirs(album_path, exist_ok=True)
         return album_path
-
-    def remove_number_prefix(self, filename):
-        """Remove existing track number prefix like '1.', '01.', '02.' from filename"""
-        import re
-        # Only match numbers followed by a period (standard track numbering)
-        # Does NOT remove numbers followed by spaces (those are part of the title)
-        # Examples: "1.Song" → "Song", "01.Song" → "Song"
-        # Preserves: "1 Hour Song", "3 Minutes", "24K Magic"
-        match = re.match(r'^(\d+)\.\s*(.+)$', filename)
-        if match:
-            return match.group(2)  # Return filename without the number
-        return filename
-
-    def add_track_number(self, filepath, track_number):
-        """Add track number prefix to filename"""
-        directory = os.path.dirname(filepath)
-        filename = os.path.basename(filepath)
-
-        # Split filename and extension
-        name_parts = os.path.splitext(filename)
-        name_without_ext = name_parts[0]
-        ext = name_parts[1]
-
-        # Remove existing number prefix first
-        clean_name = self.remove_number_prefix(name_without_ext)
-
-        # Add new track number (zero-padded to 2 digits)
-        new_filename = f"{track_number:02d}.{clean_name}{ext}"
-        new_filepath = os.path.join(directory, new_filename)
-
-        # Rename the file
-        try:
-            os.rename(filepath, new_filepath)
-            return new_filepath
-        except Exception as e:
-            debug(f"Warning: Could not rename file: {e}", level="WARN")
-            return filepath
 
     def check_has_video(self, url):
         """Check if URL has video streams available"""
@@ -2456,7 +2595,7 @@ class MusicDownloader:
                 "album": self.album_entry.get().strip(),
                 "number": bool(self.number_tracks_var.get())}
 
-    def download_music(self, url, item_id=None, opts=None, run_id=None, track_no=None):
+    def download_music(self, url, item_id=None, opts=None, run_id=None):
         """Download music from URL (runs in a background thread).
 
         item_id: the queue item (None = single download). run_id: the run this belongs to;
@@ -2516,6 +2655,21 @@ class MusicDownloader:
         # Build yt-dlp command from config
         is_audio = not opts["video"]
         command = self.build_ytdlp_command(url, download_dir, is_audio=is_audio)
+        numbering = opts["number"]
+        try:
+            existed_before = set(os.listdir(download_dir))
+        except OSError:
+            existed_before = set()
+        # Videos already saved in this folder (also after numbering renamed them) are skipped:
+        # yt-dlp gets them as a download archive, built fresh from the folder's record.
+        tracks = load_track_map(download_dir)
+        archive_fd, archive_path = tempfile.mkstemp(prefix="mdj-archive-", suffix=".txt")
+        with os.fdopen(archive_fd, "w", encoding="utf-8") as f:
+            f.writelines(key + "\n" for key in tracks)
+        # yt-dlp prints every file it saves (also one it skipped because the file was already
+        # there), so we know exactly which files a link made, in order (playlists too).
+        # Put first, so Custom arguments can still override --download-archive.
+        command[1:1] = ["--download-archive", archive_path, "--print", SAVED_PRINT]
         debug(f"yt-dlp command: {' '.join(command)}")
 
         try:
@@ -2527,7 +2681,7 @@ class MusicDownloader:
                 command,
                 stdout=subprocess.PIPE,
                 stderr=subprocess.PIPE,
-                text=True,
+                text=True, encoding="utf-8", errors="replace",
                 start_new_session=True
             )
             self.download_process = proc
@@ -2538,30 +2692,56 @@ class MusicDownloader:
             if not current():
                 return
 
+            # Files this link saved. Handled even when yt-dlp reports an error: in a playlist
+            # it skips an unavailable video, saves the others and only then exits with an error.
+            folder = os.path.realpath(download_dir)
+            saved = [(key, path) for key, path in parse_saved_lines(stdout)
+                     if os.path.isabs(path) and os.path.isfile(path)
+                     and os.path.dirname(os.path.realpath(path)) == folder]
+            new_files = 0
+            for key, path in saved:
+                name = os.path.basename(path)
+                if name not in existed_before:
+                    new_files += 1
+                if numbering:
+                    try:
+                        path, what = number_downloaded_file(path, name in existed_before)
+                        debug(f"Track numbering: {what}: {path}")
+                        if what == "duplicate":
+                            new_files -= 1
+                    except OSError as e:
+                        debug(f"Warning: Could not number {path}: {e}", level="WARN")
+                tracks[key] = os.path.basename(path)
+            if saved:
+                try:
+                    save_track_map(download_dir, tracks)
+                except OSError as e:
+                    debug(f"Warning: Could not save the track record: {e}", level="WARN")
+            if saved and safe_folder_name(album_name or ""):
+                try:
+                    write_album_playlist(download_dir)
+                except OSError as e:
+                    debug(f"Warning: Could not write the playlist: {e}", level="WARN")
+
             if proc.returncode != 0:
                 # Parse error and show user-friendly message instead of raw stderr
                 error_message = self.parse_error_message(stderr)
+                if saved:
+                    error_message += (f"\n\nThe other {len(saved)} file(s) from this link were "
+                                      "saved. Retry to try the missing ones again.")
+                    if queue_index >= 0 and download_dir not in self._queue_saved_dirs:
+                        self._queue_saved_dirs.append(download_dir)
                 if queue_index >= 0:
                     report("queue_failed", None)
                 else:
                     report("error", error_message)
             else:
-                # Apply track numbering if enabled and downloading from queue
-                if opts["number"] and queue_index >= 0:
-                    try:
-                        # Find the most recently created file in download_dir
-                        files = [os.path.join(download_dir, f) for f in os.listdir(download_dir) if os.path.isfile(os.path.join(download_dir, f))]
-                        if files:
-                            latest_file = max(files, key=os.path.getctime)
-                            # Track number = position in the queue (1-based)
-                            self.add_track_number(latest_file, track_no or 1)
-                    except Exception as e:
-                        debug(f"Warning: Could not apply track numbering: {e}", level="WARN")
-
                 if queue_index >= 0:
                     if download_dir not in self._queue_saved_dirs:
                         self._queue_saved_dirs.append(download_dir)
                     report("queue_success", None)
+                elif new_files <= 0:
+                    report("already", download_dir)     # everything was already in the folder
                 else:
                     report("success", download_dir)
         except Exception as error:
@@ -2571,6 +2751,10 @@ class MusicDownloader:
                 else:
                     report("error", str(error))
         finally:
+            try:
+                os.remove(archive_path)
+            except OSError:
+                pass
             if self.download_process is not None and self.download_process is locals().get("proc"):
                 self.download_process = None
             if queue_index < 0 and current():
@@ -3118,9 +3302,9 @@ class MusicDownloader:
             check_btn.configure(command=on_check)
 
             def apply(common, custom):
-                c = self.ytdlp_config = dialog_cfg(common, custom)
+                self.ytdlp_config = dialog_cfg(common, custom)
                 self.save_config()
-                self.audio_button.configure(text=f"Audio ({effective_audio_format(c).upper()})")
+                self.update_type_summary()
                 settings_window.destroy()
                 TooltipNotification(self.root, "✓ Settings saved", 2000)
 
@@ -3151,7 +3335,7 @@ class MusicDownloader:
                                        parent=settings_window):
                     self.ytdlp_config = self.get_default_ytdlp_config()
                     self.save_config()
-                    self.audio_button.configure(text="Audio (MP3)")
+                    self.update_type_summary()
                     settings_window.destroy()
                     TooltipNotification(self.root, "✓ Settings reset to defaults", 2000)
 
