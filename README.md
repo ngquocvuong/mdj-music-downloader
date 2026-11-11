@@ -6,14 +6,16 @@ A modern, easy-to-use desktop application for downloading audio and video from Y
 
 ## ✨ Features
 
-- 🎵 **Audio & Video Downloads** - MP3 or MP4 format
-- ⚙️ **Configurable yt-dlp Settings** - Customize download options via UI
-- 📋 **Queue Management** - Download multiple songs/videos in order
-- 📁 **Album Organization** - Auto-organize downloads into folders
-- 📂 **Open Folder in One Click** - Click the folder path shown after "Saved to:" when a download finishes
-- 🔢 **Smart Track Numbering** - Automatically number tracks (01.Song, 02.Song...)
+- 🎵 **Audio & Video Downloads** - MP3, M4A, Opus, FLAC or WAV audio, and MP4 video up to 4K
+- ⚙️ **yt-dlp Settings** - Everyday choices on the Basic tab; any yt-dlp option on the Advanced tab, with a Check button and a live preview of the exact command
+- 📋 **Numbered Download Queue** - Add many links and download them in order (1., 2., 3. ...)
+- 📁 **Album Folders** - Name an album and its songs go into their own folder
+- 🔢 **Smart Track Numbering** - 01.Song, 02.Song... and adding songs later continues the numbers
+- 🖼️ **Cover Art & Tags** - Square covers and title, artist, album and track tags that music players, phones and car stereos understand, plus a `cover.jpg` for each album folder
+- ⏭️ **No Duplicates** - Songs you already have are skipped
 - 🎼 **Playlist Generation** - Auto-creates .m3u playlist files
-- 💾 **Queue Export/Import** - Save and load download queues
+- 💾 **Queue Export/Import** - Save a queue as `<album>.txt` and load it again later; Import fills in the album name
+- 📂 **Open Folder in One Click** - Click the folder path shown after "Saved to:" when a download finishes
 - 🖥️ **Multi-Monitor Support** - Proper window positioning
 - 👥 **Multi-User Ready** - Each user gets their own settings
 - 🎨 **Modern Interface** - Clean, professional CustomTkinter UI
@@ -23,7 +25,7 @@ A modern, easy-to-use desktop application for downloading audio and video from Y
 
 Unlike other downloaders, MDJ Music Downloader is specifically designed for music collectors:
 - **Smart numbering** removes existing track numbers ("1.Song") but keeps natural numbers ("1 Hour Mix")
-- **Automatic playlists** so you can copy albums directly to your MP3 player
+- **Automatic playlists, covers and tags** so you can copy albums directly to your MP3 player, phone or car stereo
 - **Clean, focused UI** - not bloated with features you don't need
 - **Queue system** for batch downloading entire albums
 
@@ -49,17 +51,19 @@ See [INSTALL.md](INSTALL.md).
 
 ## 🎬 Usage
 
-1. **Add URLs** - Paste YouTube or other video URLs
-2. **Add to Queue** - Build your download list
-3. **Set Album Folder** (optional) - Organize into albums
-4. **Enable Track Numbering** (optional) - Auto-number songs
-5. **Click Download** - Sit back and relax!
+1. **Paste a link** - Copy a YouTube (or other site) link and click **Paste**
+2. **Download now, or + Queue** - Download one song, or build a numbered list
+3. **Set Album/Folder** (optional) - Songs go into their own album folder
+4. **Number tracks** (optional) - Songs are saved as 01.Song, 02.Song...
+5. **Click Download Queue** - Sit back and relax!
 
 ### Tips:
-- Use "Album/Folder" field to organize downloads
-- Enable "Number tracks" for proper album track ordering
-- Queue exports (.txt) can be shared or backed up
-- Playlists (.m3u) work on most MP3 players and media software
+- The queue order is the album order when "Number tracks" is on. Adding songs to an existing album later continues the numbers (`01`, `02` → `03`).
+- Songs already in the folder are skipped, so you can safely retry a playlist.
+- A link to one song inside a playlist downloads only that song.
+- **Export** saves the queue as a .txt file named after the album (e.g. `Summer Hits.txt`); **Import** loads it and fills in the album name. Good for backups and sharing.
+- Playlists (.m3u) work on most MP3 players and media software.
+- File names work on USB sticks and SD cards too: characters they don't allow are replaced (the title tag keeps the real title).
 
 ## ⚙️ Configuration (Optional)
 
@@ -67,13 +71,15 @@ See [INSTALL.md](INSTALL.md).
 
 ### Customizing yt-dlp Settings
 
-Click "⚙ yt-dlp Settings" button to:
-- Adjust audio quality (Best/High/Medium/Low)
-- Add custom yt-dlp arguments
-- Configure video quality formats
-- Reset to defaults
+Click "⚙ yt-dlp Settings":
 
-**Config File Location:** `~/.config/mdj-music-downloader/config.json` (auto-created when you change settings)
+- **Basic tab:** audio format (mp3, m4a, opus, flac, wav) and quality, video quality (best, 4K, 1440p, 1080p, 720p, 480p), cover art and tags (on by default), and your browser's login (cookies) for age-restricted videos.
+- **Advanced tab:** any yt-dlp option, with step-by-step help, a **Check** button that asks yt-dlp whether it accepts your options, and a live preview of the exact command the app will run. When a custom option changes a Basic setting, the custom option wins and the Basic control is locked with a note.
+- **Reset to Defaults** brings back the original settings.
+
+![yt-dlp Settings](screenshot-settings.png)
+
+**Config File Location:** `~/.config/mdj-music-downloader/config.json` (auto-created when you change settings). In the Flatpak: `~/.var/app/io.github.ngquocvuong.mdj-music-downloader/config/mdj-music-downloader/config.json`.
 
 **Sample Config:** See [`config.sample.json`](config.sample.json) for reference
 

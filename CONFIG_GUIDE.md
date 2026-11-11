@@ -6,6 +6,10 @@ The config file is stored **per-user** in:
 ```
 ~/.config/mdj-music-downloader/config.json
 ```
+In the Flatpak it is:
+```
+~/.var/app/io.github.ngquocvuong.mdj-music-downloader/config/mdj-music-downloader/config.json
+```
 
 **Why not in the source directory?**
 - ✅ **Multi-user support**: Each user has their own settings
@@ -58,8 +62,12 @@ See `config.sample.json` for a template.
     "audio_format": "mp3",
     "audio_quality": "0",
     "audio_extra_args": [],
-    "video_quality": "bestvideo[ext=mp4]+bestaudio[ext=m4a]/best",
-    "video_extra_args": ["--merge-output-format", "mp4"],
+    "video_format": "mp4",
+    "video_quality": "bestvideo[ext=mp4]+bestaudio[ext=m4a]/bestvideo+bestaudio/best",
+    "video_extra_args": ["--merge-output-format", "mp4", "--recode-video", "mp4"],
+    "embed_thumbnail": true,
+    "embed_metadata": true,
+    "cookies_browser": "",
     "custom_args": []
   }
 }
@@ -84,6 +92,12 @@ Example:
 ]
 ```
 
+### `queue_dir`
+The folder Export and Import last used. It is only saved after you export to or import from a folder other than the Output Folder. If it is missing or the folder is gone, the Output Folder is used.
+
+### `ytdlp_config.audio_format`
+Audio file type: `"mp3"` (default), `"m4a"`, `"opus"`, `"flac"` or `"wav"`.
+
 ### `ytdlp_config.audio_quality`
 Audio quality for MP3 (0-9, where 0 is best).
 
@@ -101,6 +115,15 @@ Examples:
 - 1080p max: `"bestvideo[height<=1080]+bestaudio/best[height<=1080]"`
 - 720p max: `"bestvideo[height<=720]+bestaudio/best[height<=720]"`
 - Best WebM: `"bestvideo[ext=webm]+bestaudio[ext=webm]/best"`
+
+### `ytdlp_config.embed_thumbnail`
+`true` (default): songs get a square cover picture, and album folders get a `cover.jpg`. Videos never get an extra cover (add `--embed-thumbnail` in `custom_args` if you want one).
+
+### `ytdlp_config.embed_metadata`
+`true` (default): title, artist and date tags. Songs in an Album/Folder always get the album name and track number, even when this is `false`.
+
+### `ytdlp_config.cookies_browser`
+Use a browser's login for age-restricted videos, e.g. `"firefox"`. `""` (default) = off. Not available in the Flatpak.
 
 ### `ytdlp_config.custom_args`
 Your custom yt-dlp arguments (applied to all downloads).

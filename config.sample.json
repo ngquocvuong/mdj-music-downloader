@@ -15,6 +15,9 @@
       "--recode-video",
       "mp4"
     ],
+    "embed_thumbnail": true,
+    "embed_metadata": true,
+    "cookies_browser": "",
     "custom_args": []
   }
 }

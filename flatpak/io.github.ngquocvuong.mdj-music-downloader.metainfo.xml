@@ -21,12 +21,14 @@
     </p>
     <p>Features:</p>
     <ul>
-      <li>Download as MP3 audio or MP4 video</li>
-      <li>Download queue: add many links and download them in order</li>
-      <li>Album folders with automatic track numbers (01, 02, 03…)</li>
+      <li>Download as MP3, M4A, Opus, FLAC or WAV audio, or MP4 video up to 4K</li>
+      <li>Numbered download queue: add many links and download them in order</li>
+      <li>Album folders with automatic track numbers (01, 02, 03…) that continue when you add songs later</li>
+      <li>Cover art and title, artist, album and track tags for music players, phones and car stereos</li>
+      <li>Songs you already have are skipped</li>
       <li>Automatic .m3u playlists for each album</li>
       <li>Export and import queue lists to back them up or share them with friends</li>
-      <li>Adjustable download settings for advanced users</li>
+      <li>Simple settings for everyday choices, and any yt-dlp option for advanced users</li>
     </ul>
     <p>
       Downloads are powered by yt-dlp. Only download content you have the right to
@@ -88,6 +90,7 @@
       <description>
         <p>First release on Flathub.</p>
         <p>A new yt-dlp Settings window with everyday choices (audio format, video quality, cover art) and a checked Advanced tab. Track numbering now continues correctly in existing album folders, songs you already have are not downloaded again, and a link to one song in a playlist downloads only that song.</p>
+        <p>Songs get cover art and tags that music players, phones and car stereos understand, and album folders get a cover picture. The queue is numbered, and Export and Import remember the album name.</p>
       </description>
     </release>
     <release version="1.0.3" date="2026-11-09">
