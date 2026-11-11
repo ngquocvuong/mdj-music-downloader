@@ -4,6 +4,12 @@ A modern, easy-to-use desktop application for downloading audio and video from Y
 
 ![MDJ Music Downloader](screenshot.png)
 
+## 🎬 Demo
+
+https://github.com/user-attachments/assets/6b4f6965-2db1-4ee1-baed-48ecad48eee8
+
+▶️ [Watch on Vimeo](https://vimeo.com/1245638057)
+
 ## ✨ Features
 
 - 🎵 **Audio & Video Downloads** - MP3, M4A, Opus, FLAC or WAV audio, and MP4 video up to 4K
