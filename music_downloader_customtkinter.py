@@ -11,6 +11,7 @@ import webbrowser
 import tkinter as tk
 import tkinter.font as tkfont
 import re
+import shlex
 import tempfile
 import itertools
 import signal
@@ -112,6 +113,8 @@ def native_dialog_command(kind, title, initialdir, filetypes=None, parent_xid=No
 
     kind is "dir", "open" or "save". Returns None when neither program is installed,
     in which case the caller falls back to the built-in Tk dialog."""
+    # In the Flatpak, zenity's dialog is drawn by the desktop's file chooser portal, so it is
+    # the real system dialog. See portal_can_open_in_folder() for its start-folder limit.
     initialdir = initialdir if initialdir and os.path.isdir(initialdir) else os.path.expanduser("~")
     start = os.path.join(initialdir, initialfile) if initialfile else initialdir.rstrip("/") + "/"
     filetypes = filetypes or []
@@ -141,6 +144,33 @@ def native_dialog_command(kind, title, initialdir, filetypes=None, parent_xid=No
             cmd += ["--getsavefilename", start] + ([filt] if filt else [])
         return cmd
     return None
+
+
+_portal_version = []
+
+
+def portal_can_open_in_folder():
+    """Can the system dialog's Open mode start in a given folder?
+
+    Always outside Flatpak. Inside, the dialog comes from the file chooser portal, which
+    only accepts a start folder for Open from version 4 (xdg-desktop-portal 1.18, e.g. Mint 22,
+    Ubuntu 24.04). Older ones (Mint 21) always open the home folder. Save works on all."""
+    if not IS_FLATPAK:
+        return True
+    if not _portal_version:
+        version = 0
+        try:
+            out = subprocess.run(
+                ["gdbus", "call", "--session", "--dest", "org.freedesktop.portal.Desktop",
+                 "--object-path", "/org/freedesktop/portal/desktop", "--method",
+                 "org.freedesktop.DBus.Properties.Get", "org.freedesktop.portal.FileChooser",
+                 "version"], capture_output=True, text=True, timeout=3).stdout
+            m = re.search(r"uint32 (\d+)", out)
+            version = int(m.group(1)) if m else 0
+        except Exception:
+            pass
+        _portal_version.append(version)
+    return _portal_version[0] >= 4
 
 
 _item_ids = itertools.count(1)
@@ -243,6 +273,157 @@ def monitor_at_pointer(widget):
     except Exception:
         pass
     return None
+
+
+_wheel_canvases = []      # canvases of CTkScrollableFrames that scroll with the mouse wheel
+WHEEL_STEP = 5            # canvas units (8 px each in CustomTkinter on Linux) per wheel notch
+
+
+def enable_wheel_scrolling(scroll_frame):
+    """Make a CTkScrollableFrame scroll with the mouse wheel on Linux.
+
+    CustomTkinter 5.2 only listens for <MouseWheel>, but Tk 8.6 on Linux (X11) reports the
+    wheel as mouse buttons 4 (up) and 5 (down), so the wheel did nothing. One global handler
+    scrolls whichever registered list is under the mouse pointer."""
+    if not sys.platform.startswith("linux") or tk.TkVersion >= 8.7:
+        return  # Tk 8.7+ sends <MouseWheel> on Linux too, which CustomTkinter already handles
+    canvas = scroll_frame._parent_canvas
+    if not _wheel_canvases:
+        root = scroll_frame.winfo_toplevel()
+        root.bind_all("<Button-4>", lambda e: _on_wheel(e, -1), add="+")
+        root.bind_all("<Button-5>", lambda e: _on_wheel(e, 1), add="+")
+    _wheel_canvases.append(canvas)
+
+
+def _on_wheel(event, direction):
+    try:
+        widget = event.widget.winfo_containing(event.x_root, event.y_root)
+    except Exception:
+        return
+    path = str(widget) if widget is not None else ""
+    for canvas in list(_wheel_canvases):
+        try:
+            if not canvas.winfo_exists():
+                _wheel_canvases.remove(canvas)
+                continue
+        except Exception:
+            continue
+        cpath = str(canvas)
+        if path == cpath or path.startswith(cpath + "."):
+            if canvas.yview() != (0.0, 1.0):        # only when the list is longer than the view
+                canvas.yview_scroll(direction * WHEEL_STEP, "units")
+            return
+
+
+
+# ---- yt-dlp option helpers (Settings window) ----
+YTDLP_OPTIONS_URL = "https://github.com/yt-dlp/yt-dlp#usage-and-options"
+YTDLP_FORMAT_URL = "https://github.com/yt-dlp/yt-dlp#format-selection"
+DEFAULT_VIDEO_FORMAT = "bestvideo[ext=mp4]+bestaudio[ext=m4a]/bestvideo+bestaudio/best"
+AUDIO_FORMATS = ["mp3", "m4a", "opus", "flac", "wav"]
+AUDIO_QUALITIES = [("Best (VBR 0)", "0"), ("High (~192 kbps)", "2"),
+                   ("Medium (~128 kbps)", "5"), ("Low (~64 kbps)", "9")]
+COOKIE_BROWSERS = ["firefox", "chrome", "chromium", "brave", "edge", "opera", "vivaldi"]
+
+
+def video_format_for(height):
+    """yt-dlp -f string for "best quality up to <height>p" (None = no limit), MP4 preferred."""
+    if not height:
+        return DEFAULT_VIDEO_FORMAT
+    h = f"[height<={height}]"
+    return f"bestvideo{h}[ext=mp4]+bestaudio[ext=m4a]/bestvideo{h}+bestaudio/best{h}/best"
+
+
+VIDEO_PRESETS = [("Best available", video_format_for(None))] + [
+    (label, video_format_for(h)) for label, h in
+    (("Up to 4K (2160p)", 2160), ("Up to 1440p", 1440), ("Up to 1080p", 1080),
+     ("Up to 720p", 720), ("Up to 480p", 480))]
+VIDEO_CUSTOM_LABEL = "Custom (see Advanced tab)"
+
+
+# Options that change a Basic-tab setting. Custom arguments come after the Basic options and
+# yt-dlp uses the last value it reads, so when one of these is in Custom arguments, it wins.
+# Value: whether the option takes a value.
+BASIC_OVERRIDES = {
+    "audio_format": {"--audio-format": True},
+    "audio_quality": {"--audio-quality": True},
+    "video_quality": {"-f": True, "--format": True},
+    "embed_thumbnail": {"--embed-thumbnail": False, "--no-embed-thumbnail": False},
+    "embed_metadata": {"--embed-metadata": False, "--add-metadata": False,
+                       "--no-embed-metadata": False, "--no-add-metadata": False},
+    "cookies_browser": {"--cookies-from-browser": True, "--no-cookies-from-browser": False},
+}
+
+
+def overridden_settings(args):
+    """{basic setting: "the custom option that replaces it"} for an argument list."""
+    found = {}
+    for i, a in enumerate(args):
+        name = a.split("=", 1)[0] if a.startswith("--") else a
+        for key, names in BASIC_OVERRIDES.items():
+            if name in names:
+                takes_value = names[name] and "=" not in a and i + 1 < len(args)
+                found[key] = f"{a} {args[i + 1]}" if takes_value else a
+    return found
+
+
+def effective_audio_format(cfg):
+    """The audio format downloads really use: a custom --audio-format wins over the Basic one."""
+    fmt = cfg.get("audio_format", "mp3")
+    args = normalize_args(cfg.get("custom_args", []))
+    for i, a in enumerate(args):
+        if a.startswith("--audio-format="):
+            fmt = a.split("=", 1)[1]
+        elif a == "--audio-format" and i + 1 < len(args):
+            fmt = args[i + 1]
+    return fmt
+
+
+def normalize_args(items):
+    """Turn saved argument lists into proper argv items.
+
+    Older versions saved each line as one item, so "--cookies-from-browser firefox" reached
+    yt-dlp as a single argument (error: no such option). Split those like a shell would."""
+    out = []
+    for item in items or []:
+        item = str(item)
+        if item.startswith("-") and "=" not in item and any(c.isspace() for c in item.strip()):
+            try:
+                out.extend(shlex.split(item))
+                continue
+            except ValueError:
+                pass
+        out.append(item)
+    return out
+
+
+def parse_args_text(text):
+    """Textbox text -> (args, error). One option per line, shell-style quoting.
+
+    A word starting with # begins a comment ("--limit-rate 2M  # slower"); a # inside
+    a word, as in a URL, is kept."""
+    args = []
+    for n, line in enumerate(text.splitlines(), 1):
+        try:
+            words = shlex.split(line)
+        except ValueError:
+            return None, f"Line {n}: a quote (\" or \') is not closed"
+        for w in words:
+            if w.startswith("#"):
+                break
+            args.append(w)
+    return args, None
+
+
+def args_to_text(args):
+    """Argument list -> textbox text: each option on its own line with its values after it."""
+    lines = []
+    for a in normalize_args(args):
+        if a.startswith("-") or not lines:
+            lines.append([a])
+        else:
+            lines[-1].append(a)
+    return "\n".join(shlex.join(parts) for parts in lines)
 
 
 def centered_position(widget, width, height):
@@ -821,7 +1002,7 @@ class MusicDownloader:
 
         self.audio_button = ctk.CTkButton(
             type_buttons,
-            text="Audio (MP3)",
+            text=f"Audio ({effective_audio_format(self.ytdlp_config).upper()})",
             command=lambda: self._select_type("audio"),
             height=33,
             corner_radius=8,
@@ -1012,6 +1193,7 @@ class MusicDownloader:
             height=200
         )
         self.queue_scroll.pack(fill="both", expand=True, padx=12, pady=(0, 10))
+        enable_wheel_scrolling(self.queue_scroll)
 
         # Empty state label
         self.empty_queue_label = ctk.CTkLabel(
@@ -1640,8 +1822,101 @@ class MusicDownloader:
 
     def load_queue_from_file(self):
         """Load queue URLs from text file"""
+        if not portal_can_open_in_folder():
+            self.show_import_picker()       # the system dialog would open in the home folder
+            return
+        self.browse_queue_file()
+
+    def browse_queue_file(self):
         self.ask_path("open", "Load Queue from File", self._load_queue_from,
                       filetypes=[("Text files", "*.txt"), ("All files", "*.*")])
+
+    def show_import_picker(self):
+        """Import window listing the queue files (.txt) in the Output Folder, newest first,
+        with "Other folder..." for the system dialog."""
+        win = ctk.CTkToplevel(self.root)
+        win.title("Import Queue")
+        self.center_dialog(win, 480, 430)
+        win.minsize(380, 320)
+        muted = ("#666666", "#8a949c")
+
+        frame = ctk.CTkFrame(win, corner_radius=15)
+        frame.pack(expand=True, fill="both", padx=12, pady=12)
+        ctk.CTkLabel(frame, text="Import Queue",
+                     font=ctk.CTkFont(size=18, weight="bold")).pack(pady=(10, 0))
+        folder = self.output_dir
+        shown = folder.replace(os.path.expanduser("~"), "~", 1)
+        ctk.CTkLabel(frame, text=f"Queue files in your Output Folder:\n{shown}",
+                     font=ctk.CTkFont(size=11), text_color=muted, justify="center",
+                     wraplength=420).pack(pady=(2, 8))
+
+        files = []
+        try:
+            for name in os.listdir(folder):
+                path = os.path.join(folder, name)
+                if name.lower().endswith(".txt") and os.path.isfile(path):
+                    files.append((os.path.getmtime(path), name, path))
+        except OSError:
+            pass
+        files.sort(reverse=True)
+
+        listing = ctk.CTkScrollableFrame(frame, fg_color=("#e8e8e8", "#1f2326"), corner_radius=8)
+        enable_wheel_scrolling(listing)
+        chosen = {"path": None, "button": None}
+
+        buttons = ctk.CTkFrame(frame, fg_color="transparent")
+        import_btn = ctk.CTkButton(buttons, text="Import", height=34, state="disabled",
+                                   fg_color=ACCENT_DIM, hover_color=ACCENT_HOVER,
+                                   text_color=ACCENT_TEXT, text_color_disabled="#6f8582")
+
+        def do_import(path=None):
+            path = path or chosen["path"]
+            if path:
+                win.destroy()
+                self._load_queue_from(path)
+
+        def select(path, btn):
+            if chosen["button"] is not None and chosen["button"].winfo_exists():
+                chosen["button"].configure(fg_color="transparent")
+            chosen.update(path=path, button=btn)
+            btn.configure(fg_color=ACCENT_DIM)
+            import_btn.configure(state="normal", fg_color=ACCENT)
+
+        today = datetime.now().date()
+        for mtime, name, path in files[:300]:
+            when = datetime.fromtimestamp(mtime)
+            date = when.strftime("Today %H:%M") if when.date() == today else when.strftime("%d %b %Y")
+            row = ctk.CTkFrame(listing, fg_color="transparent", corner_radius=6, height=30)
+            row.pack(fill="x", padx=4, pady=1)
+            name_lbl = ctk.CTkLabel(row, text=name, anchor="w", font=ctk.CTkFont(size=12))
+            name_lbl.pack(side="left", fill="x", expand=True, padx=(10, 6), pady=3)
+            date_lbl = ctk.CTkLabel(row, text=date, font=ctk.CTkFont(size=11), text_color=muted)
+            date_lbl.pack(side="right", padx=10)
+            for w in (row, name_lbl, date_lbl):
+                w.bind("<Button-1>", lambda e, p=path, r=row: select(p, r))
+                w.bind("<Double-Button-1>", lambda e, p=path: do_import(p))
+                w.configure(cursor="hand2")
+        if not files:
+            ctk.CTkLabel(listing, text="No queue files here yet.\n\nUse Export to save a queue,\n"
+                                       "or click \"Other folder...\" to find one.",
+                         font=ctk.CTkFont(size=12), text_color=muted).pack(pady=40)
+
+        def other_folder():
+            win.destroy()
+            self.browse_queue_file()
+
+        ctk.CTkButton(buttons, text="Other folder...", command=other_folder, height=34,
+                      fg_color="transparent", border_width=1, text_color=LIGHT_TEXT,
+                      hover_color=ACCENT_DIM).pack(side="left", expand=True, fill="x", padx=(0, 4))
+        ctk.CTkButton(buttons, text="Cancel", command=win.destroy, height=34,
+                      fg_color="transparent", border_width=1, text_color=LIGHT_TEXT,
+                      hover_color=ACCENT_DIM).pack(side="left", expand=True, fill="x", padx=4)
+        import_btn.configure(command=do_import)
+        import_btn.pack(side="left", expand=True, fill="x", padx=(4, 0))
+        buttons.pack(side="bottom", fill="x", padx=12, pady=(0, 10))
+        listing.pack(expand=True, fill="both", padx=12, pady=(0, 10))
+        win.bind("<Return>", lambda e: do_import())
+        win.bind("<Escape>", lambda e: win.destroy())
 
     def _load_queue_from(self, filename):
         if filename:
@@ -1700,11 +1975,14 @@ class MusicDownloader:
             "audio_quality": "0",  # 0 = best quality
             "audio_extra_args": [],
             "video_format": "mp4",
-            "video_quality": "bestvideo[ext=mp4]+bestaudio[ext=m4a]/bestvideo+bestaudio/best",
+            "video_quality": DEFAULT_VIDEO_FORMAT,
             "video_extra_args": [
                 "--merge-output-format", "mp4",
                 "--recode-video", "mp4"
             ],
+            "embed_thumbnail": False,   # cover art inside the file (--embed-thumbnail)
+            "embed_metadata": False,    # title/artist/date tags (--embed-metadata)
+            "cookies_browser": "",      # --cookies-from-browser <name>; "" = off
             "custom_args": []  # User's custom arguments (applied to all downloads)
         }
 
@@ -1756,13 +2034,13 @@ class MusicDownloader:
         """Legacy method - saves output dir to config"""
         self.save_config()
 
-    def build_ytdlp_command(self, url, download_dir, is_audio=True):
-        """Build yt-dlp command from config settings"""
-        ytdlp_path = self.get_yt_dlp_path()
-        cfg = self.ytdlp_config
+    def build_ytdlp_command(self, url, download_dir, is_audio=True, cfg=None, ytdlp_path=None):
+        """Build yt-dlp command from config settings (cfg: another config, for previews)"""
+        ytdlp_path = ytdlp_path or self.get_yt_dlp_path()
+        cfg = cfg if cfg is not None else self.ytdlp_config
 
         # Start with common args
-        command = [ytdlp_path] + cfg.get("common_args", [])
+        command = [ytdlp_path] + normalize_args(cfg.get("common_args", []))
         if IS_FLATPAK:
             # YouTube needs a JavaScript engine; the Flatpak bundles Node.js (yt-dlp only looks for Deno by default)
             command += ["--js-runtimes", "node"]
@@ -1778,8 +2056,16 @@ class MusicDownloader:
             command.extend(["-f", video_quality])
             command.extend(cfg.get("video_extra_args", []))
 
+        # Options from the Basic tab of yt-dlp Settings
+        if cfg.get("embed_thumbnail"):
+            command.append("--embed-thumbnail")
+        if cfg.get("embed_metadata"):
+            command.append("--embed-metadata")
+        if cfg.get("cookies_browser") and not IS_FLATPAK:   # the sandbox can't read browser profiles
+            command.extend(["--cookies-from-browser", cfg["cookies_browser"]])
+
         # Add custom user arguments
-        command.extend(cfg.get("custom_args", []))
+        command.extend(normalize_args(cfg.get("custom_args", [])))
 
         # Output template and URL
         command.extend(["-o", os.path.join(download_dir, "%(title)s.%(ext)s")])
@@ -2215,7 +2501,7 @@ class MusicDownloader:
 
             if not has_video:
                 # Audio-only content - prevent download
-                error_msg = "This URL has no video.\nPlease select 'Audio (MP3)' mode."
+                error_msg = "This URL has no video.\nPlease select 'Audio' mode."
                 if queue_index >= 0:
                     report("queue_failed", None)
                     report("error", error_msg)
@@ -2464,174 +2750,429 @@ class MusicDownloader:
         # Let the window appear first, then fill it (instantly if the list is cached)
         self.after_shown(sites_window, lambda: self.fetch_supported_sites(show_list))
 
+    CUSTOM_ARGS_HELP = (
+        "How to add an option (this help disappears when you click here):\n"
+        "  1. Find the option in \"All yt-dlp options\" (link below).\n"
+        "  2. Type it on its own line, with its value after a space.\n"
+        "  3. Click Check to make sure yt-dlp accepts it, then Save.\n"
+        "\n"
+        "Examples (text after # is a note and is ignored):\n"
+        "  --embed-chapters                # chapter marks in videos\n"
+        "  --limit-rate 2M                 # max 2 MB/s download speed\n"
+        "  --sponsorblock-remove sponsor   # cut sponsor segments\n"
+        "  --sub-langs en --embed-subs     # English subtitles in videos"
+    )
+
     def show_ytdlp_settings(self):
-        """Show yt-dlp settings configuration dialog"""
+        """yt-dlp settings: common choices on the Basic tab, any yt-dlp option on the Advanced tab."""
+        win = getattr(self, "_settings_window", None)
+        if win is not None and win.winfo_exists():
+            win.lift()
+            win.focus_force()
+            return
         settings_window = ctk.CTkToplevel(self.root)
+        self._settings_window = settings_window
         settings_window.title("yt-dlp Settings")
-        self.center_dialog(settings_window, 700, 600)
+
+        # As tall as fits on the monitor (the old fixed 600 px cut the bottom off on small screens)
+        try:
+            scale = ctk.ScalingTracker.get_window_scaling(self.root)
+        except Exception:
+            scale = 1.0
+        mon = monitor_at_pointer(self.root)
+        screen_h = mon[3] if mon else self.root.winfo_screenheight()
+        height = max(420, min(760, int(screen_h / scale) - 100))
+        self.center_dialog(settings_window, 720, height)
+        settings_window.minsize(560, 400)
 
         frame = ctk.CTkFrame(settings_window, corner_radius=15)
-        frame.pack(expand=True, fill="both", padx=15, pady=15)
+        frame.pack(expand=True, fill="both", padx=12, pady=12)
 
-        # Title
-        title = ctk.CTkLabel(
-            frame,
-            text="⚙ yt-dlp Configuration",
-            font=ctk.CTkFont(size=20, weight="bold")
-        )
-        title.pack(pady=(10, 5))
-
-        subtitle = ctk.CTkLabel(
-            frame,
-            text="Customize yt-dlp download arguments (one per line)",
-            font=ctk.CTkFont(size=11),
-            text_color=("#666666", "#888888")
-        )
-        subtitle.pack(pady=(0, 15))
+        muted = ("#666666", "#8a949c")
+        ctk.CTkLabel(frame, text="⚙ yt-dlp Settings",
+                     font=ctk.CTkFont(size=20, weight="bold")).pack(pady=(10, 0))
+        ctk.CTkLabel(frame, text="Basic: everyday choices.   Advanced: any other yt-dlp option.",
+                     font=ctk.CTkFont(size=11), text_color=muted).pack(pady=(0, 2))
 
         # Show the window straight away with "Loading...", then build the (slow) rest
         loading = ctk.CTkLabel(frame, text="Loading settings...", font=ctk.CTkFont(size=13),
-                               text_color=("#666666", "#888888"))
+                               text_color=muted)
         loading.pack(expand=True)
 
         def build_rest():
             if not settings_window.winfo_exists():
                 return
             loading.destroy()
-
-            # Scrollable content
-            # Filled first and put on screen once at the end: its scrollbar forces a full
-            # redraw every time the content grows, which made this window slow to open.
-            content = ctk.CTkScrollableFrame(frame, fg_color="transparent")
-
             cfg = self.ytdlp_config
 
-            # Audio Quality dropdown
-            audio_qual_label = ctk.CTkLabel(content, text="Audio Quality:", font=ctk.CTkFont(size=13, weight="bold"))
-            audio_qual_label.pack(anchor="w", pady=(5, 5))
+            tabs = ctk.CTkTabview(frame, corner_radius=10)
+            basic_tab = tabs.add("Basic")
+            adv_tab = tabs.add("Advanced")
+            # Built first and put on screen once at the end: a scrollbar forces a full
+            # redraw every time the content grows, which made this window slow to open.
+            basic = ctk.CTkScrollableFrame(basic_tab, fg_color="transparent")
+            adv = ctk.CTkScrollableFrame(adv_tab, fg_color="transparent")
+            enable_wheel_scrolling(basic)
+            enable_wheel_scrolling(adv)
 
-            quality_frame = ctk.CTkFrame(content, fg_color="transparent")
-            quality_frame.pack(fill="x", pady=(0, 10))
+            def section(parent, text, top=10):
+                ctk.CTkLabel(parent, text=text, font=ctk.CTkFont(size=13, weight="bold"),
+                             anchor="w").pack(fill="x", pady=(top, 4))
 
-            audio_quality_var = ctk.StringVar(value=cfg.get("audio_quality", "0"))
-            quality_options = [
-                ("0 - Best", "0"),
-                ("2 - High (192kbps)", "2"),
-                ("5 - Medium (128kbps)", "5"),
-                ("9 - Low (64kbps)", "9")
-            ]
-            for label, value in quality_options:
-                rb = ctk.CTkRadioButton(
-                    quality_frame,
-                    text=label,
-                    variable=audio_quality_var,
-                    value=value,
-                    font=ctk.CTkFont(size=12)
-                )
-                rb.pack(anchor="w", padx=10, pady=2)
+            def hint(parent, text, pady=(2, 6)):
+                lbl = ctk.CTkLabel(parent, text=text, font=ctk.CTkFont(size=11), text_color=muted,
+                                   anchor="w", justify="left", wraplength=600)
+                lbl.pack(fill="x", pady=pady)
+                return lbl
 
-            # Custom Arguments
-            custom_label = ctk.CTkLabel(content, text="Custom Arguments (applied to all downloads):",
-                                       font=ctk.CTkFont(size=13, weight="bold"))
-            custom_label.pack(anchor="w", pady=(15, 5))
+            controls = {}       # basic setting -> (widget, note label)
 
-            custom_text = ctk.CTkTextbox(content, height=100, font=ctk.CTkFont(size=11),
-                                         activate_scrollbars=False)  # scrollbars are slow to build
-            custom_text.pack(fill="x", pady=(0, 5))
-            custom_text.insert("1.0", "\n".join(cfg.get("custom_args", [])))
+            def add_note(r, key, w):
+                note = ctk.CTkLabel(r, text="", font=ctk.CTkFont(size=11), text_color="#f0a04b",
+                                    anchor="w", justify="left", wraplength=280)
+                note.pack(side="left", padx=(10, 0))
+                controls[key] = (w, note)
 
-            hint1 = ctk.CTkLabel(
-                content,
-                text="Tip: --cookies-from-browser firefox",
-                font=ctk.CTkFont(size=10),
-                text_color=("#888888", "#666666")
-            )
-            hint1.pack(anchor="w", pady=(0, 10))
+            def row(parent, label, make, key=None):
+                r = ctk.CTkFrame(parent, fg_color="transparent")
+                r.pack(fill="x", pady=3)
+                ctk.CTkLabel(r, text=label, width=120, anchor="w",
+                             font=ctk.CTkFont(size=12)).pack(side="left", padx=(10, 0))
+                w = make(r)
+                w.pack(side="left")
+                if key:
+                    add_note(r, key, w)
+                return w
 
-            # Advanced Settings (collapsible)
-            advanced_label = ctk.CTkLabel(content, text="Advanced Settings:",
-                                         font=ctk.CTkFont(size=13, weight="bold"))
-            advanced_label.pack(anchor="w", pady=(15, 5))
+            def check(parent, text, var, key):
+                r = ctk.CTkFrame(parent, fg_color="transparent")
+                r.pack(fill="x", pady=4)
+                w = ctk.CTkCheckBox(r, text=text, variable=var, font=ctk.CTkFont(size=12))
+                w.pack(side="left", padx=(10, 0))
+                add_note(r, key, w)
 
-            # Common args
-            common_label = ctk.CTkLabel(content, text="Common Arguments:", font=ctk.CTkFont(size=12))
-            common_label.pack(anchor="w", pady=(5, 5))
-            common_text = ctk.CTkTextbox(content, height=60, font=ctk.CTkFont(size=11),
-                                         activate_scrollbars=False)
-            common_text.pack(fill="x", pady=(0, 10))
-            common_text.insert("1.0", "\n".join(cfg.get("common_args", [])))
+            def link(parent, text, url):
+                def go():
+                    if not open_with_system(url):
+                        webbrowser.open(url)
+                    TooltipNotification(self.root, "Opening in your browser...")
+                return ctk.CTkButton(parent, text=text, command=go, height=28, width=10,
+                                     font=ctk.CTkFont(size=12), fg_color="transparent",
+                                     border_width=1, text_color=ACCENT_FG, hover_color=ACCENT_DIM)
 
-            # Video quality
-            video_qual_label = ctk.CTkLabel(content, text="Video Quality Format:", font=ctk.CTkFont(size=12))
-            video_qual_label.pack(anchor="w", pady=(5, 5))
-            video_qual_text = ctk.CTkEntry(content, font=ctk.CTkFont(size=11))
-            video_qual_text.pack(fill="x", pady=(0, 10))
-            video_qual_text.insert(0, cfg.get("video_quality", ""))
+            # ---------------- Basic tab ----------------
+            section(basic, "Audio downloads", top=4)
+            fmt = cfg.get("audio_format", "mp3")
+            audio_fmt_var = ctk.StringVar(value=fmt if fmt in AUDIO_FORMATS else "mp3")
+            row(basic, "Format", lambda p: ctk.CTkOptionMenu(
+                p, values=AUDIO_FORMATS, variable=audio_fmt_var, width=220), "audio_format")
+            q_by_value = {v: lbl for lbl, v in AUDIO_QUALITIES}
+            audio_q_var = ctk.StringVar(value=q_by_value.get(str(cfg.get("audio_quality", "0")),
+                                                             AUDIO_QUALITIES[0][0]))
+            row(basic, "Quality", lambda p: ctk.CTkOptionMenu(
+                p, values=[lbl for lbl, _ in AUDIO_QUALITIES], variable=audio_q_var, width=220),
+                "audio_quality")
+            hint(basic, "mp3 plays everywhere; m4a and opus are smaller at the same quality. "
+                        "flac and wav are lossless (bigger files; Quality does not apply).")
 
-            # Buttons
-            button_frame = ctk.CTkFrame(frame, fg_color="transparent")
-            button_frame.pack(fill="x", padx=15, pady=(0, 10))
+            section(basic, "Video downloads")
+            preset_labels = [lbl for lbl, _ in VIDEO_PRESETS]
+
+            def preset_label_for(fmt_code):
+                for lbl, code in VIDEO_PRESETS:
+                    if code == fmt_code.strip():
+                        return lbl
+                return VIDEO_CUSTOM_LABEL
+
+            video_var = ctk.StringVar(value=preset_label_for(cfg.get("video_quality", "")
+                                                             or DEFAULT_VIDEO_FORMAT))
+
+            def on_video_preset(label):
+                for lbl, code in VIDEO_PRESETS:
+                    if lbl == label:
+                        video_entry.delete(0, "end")
+                        video_entry.insert(0, code)
+                        schedule_refresh()
+                        return
+                tabs.set("Advanced")        # "Custom": the format code is edited there
+                video_entry.focus_set()
+
+            row(basic, "Quality", lambda p: ctk.CTkOptionMenu(
+                p, values=preset_labels + [VIDEO_CUSTOM_LABEL], variable=video_var,
+                width=220, command=on_video_preset), "video_quality")
+            hint(basic, "Downloads the best MP4 up to this size. Lower sizes download faster "
+                        "and use less space.")
+
+            section(basic, "Extras")
+            thumb_var = ctk.BooleanVar(value=bool(cfg.get("embed_thumbnail")))
+            meta_var = ctk.BooleanVar(value=bool(cfg.get("embed_metadata")))
+            check(basic, "Add cover art (the video thumbnail) to the file", thumb_var, "embed_thumbnail")
+            check(basic, "Add title, artist and date tags", meta_var, "embed_metadata")
+
+            cookies_var = ctk.StringVar(value=cfg.get("cookies_browser") or "Off")
+            if not IS_FLATPAK:              # the Flatpak sandbox can't read browser profiles
+                section(basic, "Sign-in (cookies)")
+                row(basic, "Browser", lambda p: ctk.CTkOptionMenu(
+                    p, values=["Off"] + COOKIE_BROWSERS, variable=cookies_var, width=220),
+                    "cookies_browser")
+                hint(basic, "Only needed when a download fails with \"Sign in to confirm\" or for "
+                            "age-restricted / members-only videos: yt-dlp then uses your browser's "
+                            "YouTube login. Close that browser before downloading.")
+
+            # ---------------- Advanced tab ----------------
+            section(adv, "Custom arguments", top=4)
+            hint(adv, "Added to every download. Write each option the same way as on the yt-dlp "
+                      "command line, one option per line.", pady=(0, 4))
+
+            custom_text = ctk.CTkTextbox(adv, height=180, wrap="none", activate_scrollbars=False,
+                                         font=ctk.CTkFont(family="Monospace", size=12))
+            custom_text.pack(fill="x", pady=(0, 4))
+            custom_text.tag_config("help", foreground="#7d8790")
+            placeholder = {"on": False}
+
+            def show_help():
+                if not custom_text.get("1.0", "end").strip():
+                    custom_text.delete("1.0", "end")
+                    custom_text.insert("1.0", self.CUSTOM_ARGS_HELP, "help")
+                    placeholder["on"] = True
+
+            def hide_help(*_):
+                if placeholder["on"]:
+                    custom_text.delete("1.0", "end")
+                    placeholder["on"] = False
+
+            def custom_value():
+                return "" if placeholder["on"] else custom_text.get("1.0", "end")
+
+            custom_text.insert("1.0", args_to_text(cfg.get("custom_args", [])))
+            show_help()
+            custom_text.bind("<FocusIn>", hide_help)
+            custom_text.bind("<FocusOut>", lambda e: show_help())
+
+            check_row = ctk.CTkFrame(adv, fg_color="transparent")
+            check_row.pack(fill="x", pady=(2, 0))
+            check_btn = ctk.CTkButton(check_row, text="Check", width=80, height=28,
+                                      font=ctk.CTkFont(size=12), fg_color=ACCENT,
+                                      hover_color=ACCENT_HOVER, text_color=ACCENT_TEXT)
+            check_btn.pack(side="left")
+            link(check_row, "All yt-dlp options ↗", YTDLP_OPTIONS_URL).pack(side="right")
+            link(check_row, "Format codes guide ↗", YTDLP_FORMAT_URL).pack(side="right", padx=6)
+            status = ctk.CTkLabel(adv, text="", font=ctk.CTkFont(size=12), anchor="w",
+                                  justify="left", wraplength=600)
+            status.pack(fill="x", pady=(2, 0))
+            hint(adv, "Both tabs are used together: Basic first, then these options. If an option "
+                      "here changes a Basic setting (like --audio-format flac), this one is used and "
+                      "that Basic setting is locked until you remove the line. The folder and file "
+                      "name (-o) are always set by the app.")
+
+            section(adv, "What the app will run")
+            mode_var = ctk.StringVar(value="Audio")
+            ctk.CTkSegmentedButton(adv, values=["Audio", "Video"], variable=mode_var,
+                                   command=lambda v: refresh()).pack(anchor="w", pady=(0, 4))
+            preview = ctk.CTkTextbox(adv, height=96, wrap="word", activate_scrollbars=False,
+                                     font=ctk.CTkFont(family="Monospace", size=11))
+            preview.pack(fill="x")
+            preview.tag_config("custom", foreground=ACCENT_FG)
+            hint(adv, "Updates as you change either tab. Your custom arguments are highlighted.")
+
+            section(adv, "Video format code (-f)")
+            video_entry = ctk.CTkEntry(adv, font=ctk.CTkFont(family="Monospace", size=11))
+            video_entry.pack(fill="x")
+            video_entry.insert(0, cfg.get("video_quality", "") or DEFAULT_VIDEO_FORMAT)
+            hint(adv, "Set by Video → Quality on the Basic tab. Change it here only if you know "
+                      "yt-dlp format codes (see \"Format codes guide\").")
+
+            section(adv, "Common arguments")
+            common_text = ctk.CTkTextbox(adv, height=56, wrap="none", activate_scrollbars=False,
+                                         font=ctk.CTkFont(family="Monospace", size=12))
+            common_text.pack(fill="x")
+            common_text.insert("1.0", args_to_text(cfg.get("common_args", [])))
+            hint(adv, "Added before all other options. Keep --ignore-config, so a yt-dlp config "
+                      "file elsewhere on this computer can't change how the app downloads.")
+
+            def dialog_cfg(common, custom):
+                """The config as currently shown in the window (used by preview and Save)."""
+                c = dict(self.ytdlp_config)
+                c["audio_format"] = audio_fmt_var.get()
+                c["audio_quality"] = dict(AUDIO_QUALITIES).get(audio_q_var.get(), "0")
+                c["video_quality"] = video_entry.get().strip() or DEFAULT_VIDEO_FORMAT
+                c["embed_thumbnail"] = bool(thumb_var.get())
+                c["embed_metadata"] = bool(meta_var.get())
+                if not IS_FLATPAK:
+                    browser = cookies_var.get()
+                    c["cookies_browser"] = "" if browser == "Off" else browser
+                c["custom_args"] = custom
+                c["common_args"] = common or ["--ignore-config"]
+                return c
+
+            pending = {"id": None}
+
+            def refresh():
+                pending["id"] = None
+                if not settings_window.winfo_exists():
+                    return
+                common, custom, err = read_args()
+                if err:
+                    common = common or []
+                    custom = []
+                # Basic: lock what Custom arguments replace, and say so
+                over = overridden_settings(custom)
+                for key, (w, note) in controls.items():
+                    if key in over:
+                        w.configure(state="disabled")
+                        note.configure(text="← set by Custom arguments: " + over[key])
+                    else:
+                        w.configure(state="normal")
+                        note.configure(text="")
+                # Advanced: the full command, with the custom part highlighted
+                c = dialog_cfg(common or [], [])
+                base = self.build_ytdlp_command("<link>", "<Output Folder>", mode_var.get() == "Audio",
+                                                cfg=c, ytdlp_path="yt-dlp")
+                k = base.index("-o")
+                preview.configure(state="normal")
+                preview.delete("1.0", "end")
+                preview.insert("end", shlex.join(base[:k]) + " ")
+                if err:
+                    preview.insert("end", "(custom arguments have an error) ", "custom")
+                elif custom:
+                    preview.insert("end", shlex.join(custom) + " ", "custom")
+                preview.insert("end", shlex.join(base[k:]))
+                preview.configure(state="disabled")
+
+            def schedule_refresh(*_):
+                if pending["id"] is None and settings_window.winfo_exists():
+                    pending["id"] = settings_window.after(250, refresh)
+
+            for var in (audio_fmt_var, audio_q_var, thumb_var, meta_var, cookies_var):
+                var.trace_add("write", schedule_refresh)
+            for box in (custom_text, common_text, video_entry):
+                box.bind("<KeyRelease>", schedule_refresh, add="+")
+
+            def on_tab_change():
+                if tabs.get() == "Basic":    # the format code may have been edited by hand
+                    video_var.set(preset_label_for(video_entry.get() or DEFAULT_VIDEO_FORMAT))
+                refresh()
+            tabs.configure(command=on_tab_change)
+
+            # ---------------- Checking and saving ----------------
+            def show_status(ok, text):
+                if settings_window.winfo_exists():
+                    status.configure(text=text, text_color=(ACCENT_FG if ok else "#ff6b6b"))
+
+            def read_args():
+                """(common, custom, error) from the two text boxes."""
+                custom, err = parse_args_text(custom_value())
+                if err:
+                    return None, None, "Custom arguments: " + err
+                common, err = parse_args_text(common_text.get("1.0", "end"))
+                if err:
+                    return None, None, "Common arguments: " + err
+                return common, custom, None
+
+            def check_args(args, done):
+                """Ask yt-dlp whether it accepts args (without downloading); done(ok, message)."""
+                def work():
+                    path = self.get_yt_dlp_path()
+                    if not path:
+                        self.run_in_ui(done, None, "yt-dlp not found, options not checked")
+                        return
+                    if any(a in ("-U", "--update", "--update-to") or a.startswith("--update-to=")
+                           for a in args):
+                        self.run_in_ui(done, False, "✗ Remove -U / --update: it would try to "
+                                       "update yt-dlp on every download")
+                        return
+                    try:
+                        # Run without a URL: yt-dlp checks every option, then stops with
+                        # "You must provide at least one URL" when they are all fine
+                        r = subprocess.run([path] + args, capture_output=True, text=True,
+                                           timeout=30, stdin=subprocess.DEVNULL)
+                    except Exception as e:
+                        self.run_in_ui(done, None, f"Could not run yt-dlp: {e}")
+                        return
+                    if "provide at least one url" in r.stderr.lower():
+                        self.run_in_ui(done, True, "✓ yt-dlp accepts these options")
+                        return
+                    if r.returncode == 0:   # e.g. --version / --help: prints and exits
+                        self.run_in_ui(done, False, "✗ One of these options makes yt-dlp stop "
+                                       "without downloading anything (like --version or --help)")
+                        return
+                    lines = [l for l in r.stderr.splitlines() if l.strip()]
+                    msg = next((l for l in lines if "error:" in l.lower()), lines[-1] if lines else "")
+                    msg = re.sub(r"^.*?error:\s*", "", msg, flags=re.I) or "unknown error"
+                    self.run_in_ui(done, False, "✗ yt-dlp: " + msg[:300])
+                threading.Thread(target=work, daemon=True).start()
+
+            def on_check():
+                common, custom, err = read_args()
+                if err:
+                    show_status(False, "✗ " + err)
+                    return
+                check_btn.configure(state="disabled", text="...")
+                show_status(True, "Checking...")
+
+                def done(ok, msg):
+                    if settings_window.winfo_exists():
+                        check_btn.configure(state="normal", text="Check")
+                        show_status(ok is not False, msg)
+                check_args(common + custom, done)
+            check_btn.configure(command=on_check)
+
+            def apply(common, custom):
+                c = self.ytdlp_config = dialog_cfg(common, custom)
+                self.save_config()
+                self.audio_button.configure(text=f"Audio ({effective_audio_format(c).upper()})")
+                settings_window.destroy()
+                TooltipNotification(self.root, "✓ Settings saved", 2000)
+
+            def save_settings():
+                common, custom, err = read_args()
+                if err:
+                    tabs.set("Advanced")
+                    show_status(False, "✗ " + err)
+                    return
+                if not custom and common == normalize_args(cfg.get("common_args", [])):
+                    apply(common, custom)       # nothing typed that needs checking
+                    return
+                save_btn.configure(state="disabled", text="Checking...")
+
+                def done(ok, msg):
+                    if not settings_window.winfo_exists():
+                        return
+                    if ok is False:             # don't save options that would break every download
+                        save_btn.configure(state="normal", text="Save Settings")
+                        tabs.set("Advanced")
+                        show_status(False, msg + "\nFix it (or remove it), then Save again.")
+                    else:
+                        apply(common, custom)
+                check_args(common + custom, done)
 
             def reset_defaults():
-                if messagebox.askyesno("Reset Settings",
-                                      "Reset all yt-dlp settings to defaults?"):
+                if messagebox.askyesno("Reset Settings", "Reset all yt-dlp settings to defaults?",
+                                       parent=settings_window):
                     self.ytdlp_config = self.get_default_ytdlp_config()
                     self.save_config()
+                    self.audio_button.configure(text="Audio (MP3)")
                     settings_window.destroy()
                     TooltipNotification(self.root, "✓ Settings reset to defaults", 2000)
 
-            def save_settings():
-                # Parse custom args
-                custom_args_text = custom_text.get("1.0", "end").strip()
-                custom_args = [line.strip() for line in custom_args_text.split("\n") if line.strip()]
-
-                # Parse common args
-                common_args_text = common_text.get("1.0", "end").strip()
-                common_args = [line.strip() for line in common_args_text.split("\n") if line.strip()]
-
-                # Update config
-                self.ytdlp_config["audio_quality"] = audio_quality_var.get()
-                self.ytdlp_config["custom_args"] = custom_args
-                self.ytdlp_config["common_args"] = common_args if common_args else ["--ignore-config"]
-                self.ytdlp_config["video_quality"] = video_qual_text.get().strip()
-
-                # Save to file
-                self.save_config()
-                settings_window.destroy()
-                TooltipNotification(self.root, "✓ Settings saved successfully", 2000)
-
-            reset_btn = ctk.CTkButton(
-                button_frame,
-                text="Reset to Defaults",
-                command=reset_defaults,
-                height=35,
-                fg_color="#8B4545",
-                hover_color="#6B3535",
-                text_color=LIGHT_TEXT
-            )
-            reset_btn.pack(side="left", expand=True, fill="x", padx=(0, 5))
-
-            save_btn = ctk.CTkButton(
-                button_frame,
-                text="Save Settings",
-                command=save_settings,
-                height=35,
-                fg_color=ACCENT
-            )
+            # Buttons: one row, always visible below the tabs
+            button_frame = ctk.CTkFrame(frame, fg_color="transparent")
+            button_frame.pack(side="bottom", fill="x", padx=12, pady=(0, 10))
+            ctk.CTkButton(button_frame, text="Reset to Defaults", command=reset_defaults, height=35,
+                          fg_color="#8B4545", hover_color="#6B3535",
+                          text_color=LIGHT_TEXT).pack(side="left", expand=True, fill="x", padx=(0, 5))
+            ctk.CTkButton(button_frame, text="Cancel", command=settings_window.destroy, height=35,
+                          fg_color="transparent", border_width=1, text_color=LIGHT_TEXT,
+                          hover_color=ACCENT_DIM).pack(side="left", expand=True, fill="x", padx=5)
+            save_btn = ctk.CTkButton(button_frame, text="Save Settings", command=save_settings,
+                                     height=35, fg_color=ACCENT, hover_color=ACCENT_HOVER,
+                                     text_color=ACCENT_TEXT)
             save_btn.pack(side="left", expand=True, fill="x", padx=(5, 0))
 
-            cancel_btn = ctk.CTkButton(
-                frame,
-                text="Cancel",
-                command=settings_window.destroy,
-                height=35,
-                fg_color="transparent",
-                border_width=1,
-                text_color=LIGHT_TEXT,
-                hover_color=ACCENT_DIM
-            )
-            cancel_btn.pack(fill="x", padx=15, pady=(0, 10))
-            content.pack(expand=True, fill="both", padx=15, pady=(0, 10), before=button_frame)
+            basic.pack(expand=True, fill="both")
+            adv.pack(expand=True, fill="both")
+            tabs.pack(expand=True, fill="both", padx=12, pady=(0, 8))
+            refresh()                       # lock overridden Basic settings, fill the preview
 
         self.after_shown(settings_window, build_rest)
 
@@ -2815,6 +3356,9 @@ class MusicDownloader:
         if getattr(self, "_picker_open", False):
             return                      # a chooser is already open; ignore extra clicks
         initialdir = initialdir or self.output_dir
+        # The folder may not exist yet (nothing downloaded): start in its nearest existing parent
+        while initialdir and not os.path.isdir(initialdir) and os.path.dirname(initialdir) != initialdir:
+            initialdir = os.path.dirname(initialdir)
 
         def tk_dialog():
             opts = dict(title=title, initialdir=initialdir, parent=self.root)
