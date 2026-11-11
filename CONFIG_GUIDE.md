@@ -70,7 +70,7 @@ See `config.sample.json` for a template.
 ### `output_dir`
 Default download location.
 
-Example: `"/home/user/Music/YouTube MP3"`
+Example: `"/home/user/Music/MDJ Downloads"`
 
 ### `ytdlp_config.common_args`
 Arguments applied to ALL downloads (audio + video).
@@ -171,7 +171,7 @@ yt-dlp command: /opt/mdj-music-downloader/yt-dlp --ignore-config -x --audio-form
 
 User 1 (alice):
 - Config: `/home/alice/.config/mdj-music-downloader/config.json`
-- Output: `/home/alice/Music/YouTube MP3`
+- Output: `/home/alice/Music/MDJ Downloads`
 - Quality: Best (0)
 
 User 2 (bob):

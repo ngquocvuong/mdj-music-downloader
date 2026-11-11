@@ -1,0 +1,11 @@
+[Desktop Entry]
+Name=MDJ Music Downloader
+Comment=Download music and videos from YouTube and other sites
+Exec=mdj-music-downloader
+Icon=io.github.ngquocvuong.mdj-music-downloader
+Type=Application
+Categories=AudioVideo;Audio;
+Keywords=music;mp3;youtube;download;video;playlist;album;
+Terminal=false
+StartupWMClass=mdj-music-downloader
+StartupNotify=true

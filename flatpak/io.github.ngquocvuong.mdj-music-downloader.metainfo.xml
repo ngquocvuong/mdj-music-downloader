@@ -1,0 +1,109 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- Copyright 2026 MDJ Digital LLC -->
+<component type="desktop-application">
+  <id>io.github.ngquocvuong.mdj-music-downloader</id>
+  <metadata_license>CC0-1.0</metadata_license>
+  <project_license>MIT</project_license>
+
+  <name>MDJ Music Downloader</name>
+  <summary>Download music into tidy, numbered albums</summary>
+
+  <developer id="io.github.ngquocvuong">
+    <name>MDJ Digital LLC</name>
+  </developer>
+
+  <description>
+    <p>
+      MDJ Music Downloader is a simple app for saving music and videos from YouTube
+      and many other sites. It is made for music collectors: build a queue of songs,
+      name an album, and the tracks are saved into their own folder with track numbers
+      and a playlist, ready for your music player or MP3 player.
+    </p>
+    <p>Features:</p>
+    <ul>
+      <li>Download as MP3 audio or MP4 video</li>
+      <li>Download queue: add many links and download them in order</li>
+      <li>Album folders with automatic track numbers (01, 02, 03…)</li>
+      <li>Automatic .m3u playlists for each album</li>
+      <li>Export and import queue lists to back them up or share them with friends</li>
+      <li>Adjustable download settings for advanced users</li>
+    </ul>
+    <p>
+      Downloads are powered by yt-dlp. Only download content you have the right to
+      download, and respect copyright and each site's terms of service.
+    </p>
+  </description>
+
+  <launchable type="desktop-id">io.github.ngquocvuong.mdj-music-downloader.desktop</launchable>
+
+  <screenshots>
+    <screenshot type="default">
+      <caption>Downloading a queue of songs into an album folder</caption>
+      <image>https://raw.githubusercontent.com/ngquocvuong/mdj-music-downloader/v1.1.0/screenshot.png</image>
+    </screenshot>
+  </screenshots>
+
+  <url type="homepage">https://github.com/ngquocvuong/mdj-music-downloader</url>
+  <url type="bugtracker">https://github.com/ngquocvuong/mdj-music-downloader/issues</url>
+  <url type="vcs-browser">https://github.com/ngquocvuong/mdj-music-downloader</url>
+  <url type="contribute">https://github.com/ngquocvuong/mdj-music-downloader/blob/main/CONTRIBUTING.md</url>
+  <url type="donation">https://ko-fi.com/mdj_musicdl</url>
+
+  <content_rating type="oars-1.1"/>
+
+  <supports>
+    <control>pointing</control>
+    <control>keyboard</control>
+  </supports>
+  <requires>
+    <display_length compare="ge">768</display_length>
+  </requires>
+  <recommends>
+    <internet>always</internet>
+  </recommends>
+
+  <categories>
+    <category>AudioVideo</category>
+    <category>Audio</category>
+  </categories>
+  <keywords>
+    <keyword>music</keyword>
+    <keyword>mp3</keyword>
+    <keyword>youtube</keyword>
+    <keyword>download</keyword>
+    <keyword>playlist</keyword>
+  </keywords>
+
+  <branding>
+    <color type="primary" scheme_preference="light">#7fe0d3</color>
+    <color type="primary" scheme_preference="dark">#17243a</color>
+  </branding>
+
+  <releases>
+    <release version="1.1.0" date="2026-11-25">
+      <description>
+        <p>First release on Flathub.</p>
+      </description>
+    </release>
+    <release version="1.0.3" date="2026-11-09">
+      <description>
+        <p>You can keep adding songs while a queue is downloading, Cancel always stops the download, and a new teal colour scheme matches the app icon. Also fixes several freezes.</p>
+      </description>
+    </release>
+    <release version="1.0.2" date="2026-11-09">
+      <description>
+        <p>Fixes downloads failing on Ubuntu 22.04 and Linux Mint 21.</p>
+      </description>
+    </release>
+    <release version="1.0.1" date="2026-11-09">
+      <description>
+        <p>New Ko-fi link for supporting development.</p>
+      </description>
+    </release>
+    <release version="1.0.0" date="2026-11-09">
+      <description>
+        <p>First public release.</p>
+      </description>
+    </release>
+  </releases>
+</component>

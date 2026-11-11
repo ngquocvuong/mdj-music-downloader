@@ -58,6 +58,11 @@ if DEBUG:
 # App version
 APP_VERSION = "1.0.3"
 
+# Running inside a Flatpak sandbox (e.g. installed from Flathub)? Flatpak creates this file.
+# There, yt-dlp and ffmpeg are bundled in /app/bin and updated with the Flatpak itself,
+# so the in-app yt-dlp updater is hidden (Flathub apps must not download and run code).
+IS_FLATPAK = os.path.exists("/.flatpak-info")
+
 # Per-user yt-dlp copy, used when the user can't (or doesn't want to) update the
 # system-wide copy next to the app (e.g. a standard user on a shared computer).
 USER_DATA_DIR = os.path.join(
@@ -176,11 +181,57 @@ def url_key(url):
 _monitor_cache = []
 
 
+def xinerama_monitors():
+    """Monitor rectangles [(x, y, width, height)] straight from the X server (libXinerama).
+
+    Works without the xrandr program, which the Flatpak runtime doesn't include.
+    Returns [] if the libraries or the display aren't available."""
+    import ctypes
+    try:
+        x11 = ctypes.CDLL("libX11.so.6")
+        xin = ctypes.CDLL("libXinerama.so.1")
+    except OSError:
+        return []
+
+    class ScreenInfo(ctypes.Structure):
+        _fields_ = [("screen_number", ctypes.c_int), ("x_org", ctypes.c_short),
+                    ("y_org", ctypes.c_short), ("width", ctypes.c_short), ("height", ctypes.c_short)]
+
+    x11.XOpenDisplay.restype = ctypes.c_void_p
+    x11.XOpenDisplay.argtypes = [ctypes.c_char_p]
+    x11.XCloseDisplay.argtypes = [ctypes.c_void_p]
+    x11.XFree.argtypes = [ctypes.c_void_p]
+    xin.XineramaIsActive.argtypes = [ctypes.c_void_p]
+    xin.XineramaQueryScreens.restype = ctypes.POINTER(ScreenInfo)
+    xin.XineramaQueryScreens.argtypes = [ctypes.c_void_p, ctypes.POINTER(ctypes.c_int)]
+    dpy = x11.XOpenDisplay(None)
+    if not dpy:
+        return []
+    try:
+        if not xin.XineramaIsActive(dpy):
+            return []
+        count = ctypes.c_int(0)
+        screens = xin.XineramaQueryScreens(dpy, ctypes.byref(count))
+        if not screens:
+            return []
+        result = [(screens[i].x_org, screens[i].y_org, screens[i].width, screens[i].height)
+                  for i in range(count.value)]
+        x11.XFree(screens)
+        return result
+    finally:
+        x11.XCloseDisplay(dpy)
+
+
 def monitor_at_pointer(widget):
-    """(x, y, width, height) of the monitor under the mouse, or None (uses xrandr)."""
+    """(x, y, width, height) of the monitor under the mouse, or None (Xinerama, else xrandr)."""
     try:
         px, py = widget.winfo_pointerx(), widget.winfo_pointery()
         if not _monitor_cache:
+            try:
+                _monitor_cache.extend(xinerama_monitors())
+            except Exception:
+                pass
+        if not _monitor_cache and shutil.which("xrandr"):
             out = subprocess.run(["xrandr", "--listmonitors"], capture_output=True,
                                  text=True, timeout=1, env=external_env()).stdout
             for m in re.finditer(r"(\d+)/\d+x(\d+)/\d+\+(\d+)\+(\d+)", out):
@@ -218,7 +269,10 @@ def open_with_system(target):
 
 
 def system_ytdlp_path():
-    """yt-dlp shipped next to the app (/opt/mdj-music-downloader/yt-dlp), or None when running from source."""
+    """yt-dlp shipped with the app (/opt/mdj-music-downloader/yt-dlp, or /app/bin/yt-dlp in the
+    Flatpak), or None when running from source."""
+    if IS_FLATPAK:
+        return "/app/bin/yt-dlp"
     if getattr(sys, "frozen", False):
         return os.path.join(os.path.dirname(sys.executable), "yt-dlp")
     return None
@@ -341,7 +395,24 @@ class HoverTip:
 
 
 class TooltipNotification:
-    def __init__(self, parent, message, duration=2000):
+    """Small pop-up message that fades out by itself.
+
+    once: a key for routine confirmations (e.g. "paste"); a message with a key is shown only
+    the first time per app session, so repeated clicks don't keep flashing pop-ups."""
+    _current = None          # only one notification on screen at a time
+    _shown_once = set()
+
+    def __init__(self, parent, message, duration=2000, once=None):
+        self.tooltip = None
+        if once is not None:
+            if once in TooltipNotification._shown_once:
+                return
+            TooltipNotification._shown_once.add(once)
+        previous = TooltipNotification._current
+        if previous is not None:
+            previous._destroy()
+        TooltipNotification._current = self
+
         self.tooltip = ctk.CTkToplevel(parent)
         self.tooltip.withdraw()
         self.tooltip.overrideredirect(True)
@@ -352,9 +423,10 @@ class TooltipNotification:
             text=message,
             fg_color=TIP_BG,
             text_color=TIP_TEXT,
-            corner_radius=8,
-            padx=20,
-            pady=10
+            font=ctk.CTkFont(size=12),
+            corner_radius=6,
+            padx=10,
+            pady=3
         )
         self.label.pack()
 
@@ -379,19 +451,33 @@ class TooltipNotification:
         # Schedule fade out
         self.tooltip.after(duration, self.fade_out)
 
+    def _destroy(self):
+        try:
+            if self.tooltip is not None and self.tooltip.winfo_exists():
+                self.tooltip.destroy()
+        except Exception:
+            pass
+        self.tooltip = None
+        if TooltipNotification._current is self:
+            TooltipNotification._current = None
+
     def fade_in(self, alpha=0.0):
+        if self.tooltip is None:
+            return
         if alpha < 0.95:
             alpha += 0.1
             self.tooltip.attributes('-alpha', alpha)
             self.tooltip.after(30, lambda: self.fade_in(alpha))
 
     def fade_out(self, alpha=0.95):
+        if self.tooltip is None:
+            return
         if alpha > 0:
             alpha -= 0.1
             self.tooltip.attributes('-alpha', alpha)
             self.tooltip.after(30, lambda: self.fade_out(alpha))
         else:
-            self.tooltip.destroy()
+            self._destroy()
 
 
 class MusicDownloader:
@@ -402,7 +488,10 @@ class MusicDownloader:
         debug("Title set")
 
         # Config file - save in user's home directory for multi-user support
-        config_dir = os.path.join(os.path.expanduser("~"), ".config", "mdj-music-downloader")
+        # Flatpak: the sandbox has its own config folder (~/.var/app/<app id>/config) in XDG_CONFIG_HOME
+        config_home = (os.environ.get("XDG_CONFIG_HOME") if IS_FLATPAK else None) or \
+            os.path.join(os.path.expanduser("~"), ".config")
+        config_dir = os.path.join(config_home, "mdj-music-downloader")
         os.makedirs(config_dir, exist_ok=True)
         self.config_file = os.path.join(config_dir, "config.json")
         debug("Config directory created")
@@ -844,7 +933,8 @@ class MusicDownloader:
             text_color=LIGHT_TEXT,
             hover_color=ACCENT_DIM
         )
-        update_ytdlp_btn.pack(fill="x", pady=(0, 5))
+        if not IS_FLATPAK:      # Flatpak: yt-dlp is updated together with the app
+            update_ytdlp_btn.pack(fill="x", pady=(0, 5))
 
         # Support Development button
         support_btn = ctk.CTkButton(
@@ -1072,7 +1162,8 @@ class MusicDownloader:
                     error_lower = str(msg_data).lower()
                     update_hint = ""
                     if any(word in error_lower for word in ["403", "forbidden", "old", "update", "version"]):
-                        update_hint = " → Try updating: pip3 install -U yt-dlp"
+                        update_hint = (" → Check for app updates in your Software Manager" if IS_FLATPAK
+                                       else " → Try updating: pip3 install -U yt-dlp")
                     self.status_label.configure(text=f"Error: {msg_data}{update_hint}", text_color="#f44336")
                     self._keep_status = True
                 elif msg_type == "reset":
@@ -1221,13 +1312,15 @@ class MusicDownloader:
                 self.status_label.configure(text=f"v{APP_VERSION}", text_color=("#666666", "#888888"))
         elif not exists:
             self.status_label.configure(
-                text=("⚠ yt-dlp missing! Click 'Update yt-dlp' or reinstall the application" if frozen
+                text=("⚠ yt-dlp missing! Please reinstall the application" if IS_FLATPAK
+                      else "⚠ yt-dlp missing! Click 'Update yt-dlp' or reinstall the application" if frozen
                       else "⚠ yt-dlp not found! Install with: pip3 install -U yt-dlp"),
                 text_color="#ff9800")
         else:
             debug(f"yt-dlp at {path} does not run", level="ERROR")
             self.status_label.configure(
-                text=("⚠ yt-dlp error! Click 'Update yt-dlp' to repair it" if frozen
+                text=("⚠ yt-dlp error! Please reinstall the application" if IS_FLATPAK
+                      else "⚠ yt-dlp error! Click 'Update yt-dlp' to repair it" if frozen
                       else "⚠ yt-dlp error! Try: pip3 install -U --force-reinstall yt-dlp"),
                 text_color="#ff9800")
 
@@ -1237,7 +1330,7 @@ class MusicDownloader:
             if clipboard_content:
                 self.url_entry.delete(0, 'end')
                 self.url_entry.insert(0, clipboard_content)
-                TooltipNotification(self.root, "✓ URL pasted from clipboard")
+                TooltipNotification(self.root, "✓ URL pasted from clipboard", once="paste")
             else:
                 TooltipNotification(self.root, "⚠ Clipboard is empty")
         except:
@@ -1274,7 +1367,7 @@ class MusicDownloader:
         self.update_download_button_text()
 
         queue_size = len(self.download_queue)
-        TooltipNotification(self.root, f"✓ Added to queue ({queue_size} items)")
+        TooltipNotification(self.root, "✓ Added to queue", once="queued")
 
     def create_queue_item(self, index):
         """Create widget for queue item"""
@@ -1617,7 +1710,9 @@ class MusicDownloader:
 
     def load_config(self):
         """Load full config including output_dir and yt-dlp settings"""
-        default_dir = os.path.expanduser("~/Music/YouTube MP3")
+        default_dir = os.path.expanduser("~/Music/MDJ Downloads")
+        # Default folder up to v1.0.3. If a saved config still points at it, move to the new default.
+        old_default_dir = os.path.expanduser("~/Music/YouTube MP3")
         default_ytdlp = self.get_default_ytdlp_config()
 
         try:
@@ -1626,6 +1721,8 @@ class MusicDownloader:
 
                 # Load output directory
                 saved_dir = config.get("output_dir", default_dir)
+                if os.path.normpath(os.path.expanduser(saved_dir)) == old_default_dir:
+                    saved_dir = default_dir
                 if not (os.path.exists(os.path.dirname(saved_dir)) or saved_dir == default_dir):
                     saved_dir = default_dir
 
@@ -1666,6 +1763,9 @@ class MusicDownloader:
 
         # Start with common args
         command = [ytdlp_path] + cfg.get("common_args", [])
+        if IS_FLATPAK:
+            # YouTube needs a JavaScript engine; the Flatpak bundles Node.js (yt-dlp only looks for Deno by default)
+            command += ["--js-runtimes", "node"]
 
         if is_audio:
             # Audio download
@@ -1690,7 +1790,8 @@ class MusicDownloader:
     def start_download(self):
         # Check ffmpeg
         if shutil.which("ffmpeg") is None:
-            self.show_error_dialog("Error", "ffmpeg is not installed.\nInstall it using: sudo apt install ffmpeg")
+            self.show_error_dialog("Error", "ffmpeg is missing.\nPlease reinstall the application." if IS_FLATPAK
+                                   else "ffmpeg is not installed.\nInstall it using: sudo apt install ffmpeg")
             return
 
         # Process queue or single download
@@ -1942,8 +2043,9 @@ class MusicDownloader:
         """Pick the newest *working* yt-dlp among the user's own copy and the system copy.
 
         Returns (path, version_string_or_None)."""
-        candidates = [USER_YTDLP_PATH]
         sys_path = system_ytdlp_path()
+        # Flatpak: only the bundled copy (no self-downloaded yt-dlp, see IS_FLATPAK)
+        candidates = [] if IS_FLATPAK else [USER_YTDLP_PATH]
         if sys_path:
             candidates.append(sys_path)
         else:
@@ -2094,7 +2196,7 @@ class MusicDownloader:
                 report("queue_failed", None)
             else:
                 # Show appropriate message based on whether app is bundled
-                if getattr(sys, 'frozen', False):
+                if getattr(sys, 'frozen', False) or IS_FLATPAK:
                     error_msg = ("yt-dlp not found!\n\n"
                                 "The application may be corrupted.\n"
                                 "Please reinstall the application to fix this issue.")
@@ -2535,6 +2637,8 @@ class MusicDownloader:
 
     def update_ytdlp(self):
         """Update yt-dlp to the latest version"""
+        if IS_FLATPAK:          # never download code in the Flatpak (button is hidden there too)
+            return
         # Create update dialog
         update_window = ctk.CTkToplevel(self.root)
         update_window.title("Update yt-dlp")

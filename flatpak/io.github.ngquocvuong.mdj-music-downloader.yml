@@ -1,0 +1,134 @@
+app-id: io.github.ngquocvuong.mdj-music-downloader
+runtime: org.freedesktop.Platform
+runtime-version: '26.08'
+sdk: org.freedesktop.Sdk
+sdk-extensions:
+  - org.freedesktop.Sdk.Extension.node24
+command: mdj-music-downloader
+
+finish-args:
+  # Tk draws with X11 (runs through XWayland on Wayland desktops)
+  - --share=ipc
+  - --socket=x11
+  # Downloading
+  - --share=network
+  # Where downloads are saved by default (~/Music) and other usual places
+  - --filesystem=xdg-music
+  - --filesystem=xdg-videos
+  - --filesystem=xdg-download
+
+cleanup:
+  - /include
+  - /lib/pkgconfig
+  - /man
+  - /share/man
+  - '*.a'
+  - /lib/tclConfig.sh
+  - /lib/tkConfig.sh
+  - /lib/tclooConfig.sh
+
+modules:
+  # ── Tcl/Tk: the Flatpak runtime's Python has no Tk, which the app's UI needs ──
+  - name: tcl
+    subdir: unix
+    config-opts:
+      - --enable-threads
+      - --enable-shared
+    post-install:
+      - chmod u+w /app/lib/libtcl*.so
+    sources:
+      - type: archive
+        url: https://downloads.sourceforge.net/project/tcl/Tcl/8.6.18/tcl8.6.18-src.tar.gz
+        sha256: 14f9af32b1767ff718477a8f974ad03c34341097e6b43f4ce54644ee974e268e
+
+  - name: tk
+    subdir: unix
+    config-opts:
+      - --enable-threads
+      - --enable-shared
+      - --enable-xft
+      - --with-tcl=/app/lib
+    post-install:
+      - chmod u+w /app/lib/libtk*.so
+    sources:
+      - type: archive
+        url: https://downloads.sourceforge.net/project/tcl/Tcl/8.6.18/tk8.6.18-src.tar.gz
+        sha256: 95cd528a80f5e4bdb557af9b14a7197d6860793a3894e25e7c9fad2ed05d4c3c
+
+  # ── Python's tkinter module, built for the runtime's Python (must match its version) ──
+  - name: tkinter
+    buildsystem: simple
+    build-commands:
+      - |
+        set -e
+        PYVER=$(python3 -c 'import sys; print(f"{sys.version_info[0]}.{sys.version_info[1]}")')
+        SITE=/app/lib/python${PYVER}/site-packages
+        EXT=$(python3 -c 'import sysconfig; print(sysconfig.get_config_var("EXT_SUFFIX"))')
+        install -d "$SITE"
+        gcc -shared -fPIC -O2 $(python3-config --includes) -I/usr/include/python${PYVER}/internal \
+            -I/app/include -DPy_BUILD_CORE_MODULE -DWITH_APPINIT=1 -I Modules \
+            Modules/_tkinter.c Modules/tkappinit.c \
+            -L/app/lib -ltcl8.6 -ltk8.6 -Wl,-rpath,/app/lib \
+            -o "$SITE/_tkinter$EXT"
+        cp -r Lib/tkinter "$SITE/"
+        rm -rf "$SITE/tkinter/test"
+    sources:
+      - type: archive
+        # Same version as the runtime's python3 (Python 3.14.9 in 26.08); update together
+        url: https://www.python.org/ftp/python/3.14.9/Python-3.14.9.tar.xz
+        sha256: e02d9ac21cebda6e46435369744a92c65cc7cd8669697694122cf97ffacd1e53
+
+  # ── Python packages: UI library and the yt-dlp download engine ──
+  - name: python-deps
+    buildsystem: simple
+    build-commands:
+      - pip3 install --no-index --find-links=. --prefix=/app --no-build-isolation --ignore-installed
+        customtkinter darkdetect packaging yt-dlp yt-dlp-ejs certifi mutagen
+    sources:
+      - type: file
+        url: https://files.pythonhosted.org/packages/3b/b1/b43b33001a77256b335511e75f257d001082350b8506c8807f30c98db052/customtkinter-5.2.2-py3-none-any.whl
+        sha256: 14ad3e7cd3cb3b9eb642b9d4e8711ae80d3f79fb82545ad11258eeffb2e6b37c
+      - type: file
+        url: https://files.pythonhosted.org/packages/f2/f2/728f041460f1b9739b85ee23b45fa5a505962ea11fd85bdbe2a02b021373/darkdetect-0.8.0-py3-none-any.whl
+        sha256: a7509ccf517eaad92b31c214f593dbcf138ea8a43b2935406bbd565e15527a85
+      - type: file
+        url: https://files.pythonhosted.org/packages/63/34/ba1c580383c9eada3711951fef0795c80b829a078d72188184bcab9dd527/packaging-26.3-py3-none-any.whl
+        sha256: d7193f7c8e4e93f444fde0262bf90af30e16fa0ad0ad44cb553c87339b23cd1c
+      - type: file
+        url: https://files.pythonhosted.org/packages/7f/3d/16ea7d5638cf585991f2c5705e8083688dde633d32d0871f2404e0f4d827/yt_dlp-2026.10.26-py3-none-any.whl
+        sha256: a05c5b5d8562f7e8a62f5334348b406af4930d56d3a65f8021d14af0e22339ae
+      - type: file
+        url: https://files.pythonhosted.org/packages/e3/bd/520769863744b669440a924271a6159ddd82ad5ae26b4ac4d4b69e9f8d44/yt_dlp_ejs-0.8.0-py3-none-any.whl
+        sha256: 79300e5fca7f937a1eeede11f0456862c1b41107ce1d726871e0207424f4bdb4
+      - type: file
+        url: https://files.pythonhosted.org/packages/32/d1/a3652fe2c19134d0d15922177821d863cbd7e842d53a21bbe7e8e3a1b5ac/certifi-2026.10.23-py3-none-any.whl
+        sha256: e9b54de76e530bb6cf0ccd036787103acb58fd42ba930ea8bf948ddbaa2f61d1
+      - type: file
+        url: https://files.pythonhosted.org/packages/47/d8/a29e4e3991765e7ce4ed1f7e4074fe1ba9da03e0048639734de60f9cadb9/mutagen-1.48.1-py3-none-any.whl
+        sha256: 4f077fe87d3fc7fba259aa63d8c026b18382ca6a42ef37c61e16f1b1b5b82fe7
+
+  # ── Node.js: JavaScript engine yt-dlp needs for YouTube ──
+  - name: node
+    buildsystem: simple
+    build-commands:
+      - install -Dm755 /usr/lib/sdk/node24/bin/node /app/bin/node
+
+  # ── The app itself (ffmpeg comes with the runtime) ──
+  - name: mdj-music-downloader
+    buildsystem: simple
+    build-commands:
+      - install -Dm644 music_downloader_customtkinter.py /app/share/mdj-music-downloader/music_downloader_customtkinter.py
+      - cp -r icons /app/share/mdj-music-downloader/
+      - install -Dm755 flatpak/mdj-music-downloader.sh /app/bin/mdj-music-downloader
+      - install -Dm644 flatpak/${FLATPAK_ID}.desktop /app/share/applications/${FLATPAK_ID}.desktop
+      - install -Dm644 flatpak/${FLATPAK_ID}.metainfo.xml /app/share/metainfo/${FLATPAK_ID}.metainfo.xml
+      - install -Dm644 icons/mdj-music-downloader.svg /app/share/icons/hicolor/scalable/apps/${FLATPAK_ID}.svg
+      - for s in 32 48 64 128 256 512; do install -Dm644 icons/mdj-music-downloader-$s.png /app/share/icons/hicolor/${s}x${s}/apps/${FLATPAK_ID}.png; done
+    sources:
+      # For local test builds. For Flathub, replace with the release tag:
+      #   - type: git
+      #     url: https://github.com/ngquocvuong/mdj-music-downloader.git
+      #     tag: v1.1.0
+      #     commit: <commit hash of the tag>
+      - type: dir
+        path: ..

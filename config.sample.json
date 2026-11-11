@@ -1,5 +1,5 @@
 {
-  "output_dir": "~/Music/YouTube MP3",
+  "output_dir": "~/Music/MDJ Downloads",
   "ytdlp_config": {
     "common_args": [
       "--ignore-config"
