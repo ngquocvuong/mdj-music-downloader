@@ -57,7 +57,7 @@ if DEBUG:
         pass
 
 # App version
-APP_VERSION = "1.0.3"
+APP_VERSION = "1.1.0"
 
 # Running inside a Flatpak sandbox (e.g. installed from Flathub)? Flatpak creates this file.
 # There, yt-dlp and ffmpeg are bundled in /app/bin and updated with the Flatpak itself,

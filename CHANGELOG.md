@@ -4,7 +4,7 @@ All notable changes to MDJ Music Downloader will be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
-## [1.1.0] - Unreleased
+## [1.1.0] - 2026-11-11
 
 ### Added
 - **Flatpak package**, ready for Flathub (app ID `io.github.ngquocvuong.mdj-music-downloader`). It includes yt-dlp, ffmpeg and Node.js (which yt-dlp needs for YouTube), so nothing else has to be installed. In the Flatpak, yt-dlp is updated with the app, so "Update yt-dlp" is hidden.

@@ -86,7 +86,7 @@
   </branding>
 
   <releases>
-    <release version="1.1.0" date="2026-11-25">
+    <release version="1.1.0" date="2026-11-11">
       <description>
         <p>First release on Flathub.</p>
         <p>A new yt-dlp Settings window with everyday choices (audio format, video quality, cover art) and a checked Advanced tab. Track numbering now continues correctly in existing album folders, songs you already have are not downloaded again, and a link to one song in a playlist downloads only that song.</p>
