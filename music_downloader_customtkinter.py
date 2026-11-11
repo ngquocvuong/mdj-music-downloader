@@ -1614,14 +1614,16 @@ class MusicDownloader:
 
     def show_saved_status(self, before, folder, color, after=""):
         """Show `before + folder + after`; only `folder` is clickable (underlined on hover) and opens it."""
-        text = before + folder + after
+        home = os.path.expanduser("~")
+        shown = "~" + folder[len(home):] if folder == home or folder.startswith(home + "/") else folder
+        text = before + shown + after
         self._status_label_configure(text=text, text_color=color)  # keep label text in sync (cget / tests)
         self._status_link_dir, self._status_link_text = folder, text
         st = self.status_text
         st.configure(state="normal")
         st.delete("1.0", "end")
         st.insert("end", before, ("all",))
-        st.insert("end", folder, ("all", "link"))
+        st.insert("end", shown, ("all", "link"))
         st.insert("end", after, ("all",))
         st.configure(state="disabled", fg=color)
         st.tag_configure("link", underline=False)
