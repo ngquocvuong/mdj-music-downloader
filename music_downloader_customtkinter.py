@@ -58,7 +58,7 @@ if DEBUG:
         pass
 
 # App version
-APP_VERSION = "1.1.1"
+APP_VERSION = "1.1.2"
 
 # Running inside a Flatpak sandbox (see flatpak/README.md)? Flatpak creates this file.
 # There, yt-dlp and ffmpeg are bundled in /app/bin (read-only) and updated with the Flatpak
@@ -387,6 +387,29 @@ def _flac_picture(data):
     return pic
 
 
+def forget_failed_thumbnail(path):
+    """Let file managers make a new preview icon for a file we just changed.
+
+    A file manager showing the folder during a download makes its icon right after yt-dlp saves
+    the song, before the app adds the cover. It finds no picture, records "no thumbnail" in
+    ~/.cache/thumbnails/fail/ (freedesktop thumbnail spec) and doesn't try again, even after
+    the cover is added. Removing that record makes it draw the cover."""
+    import hashlib
+    try:
+        # The file's URI exactly as GLib writes it (the record's name is its MD5)
+        uri = "file://" + urllib.parse.quote(os.path.abspath(path), safe="/!$&'()*+,=:@~-._")
+        name = hashlib.md5(uri.encode("utf-8")).hexdigest() + ".png"
+        fail_dir = os.path.join(os.environ.get("XDG_CACHE_HOME") or os.path.expanduser("~/.cache"),
+                                "thumbnails", "fail")
+        for program in os.listdir(fail_dir):          # e.g. gnome-thumbnail-factory
+            try:
+                os.remove(os.path.join(fail_dir, program, name))
+            except OSError:
+                pass
+    except OSError:
+        pass                                          # no thumbnail cache: nothing to do
+
+
 def write_tags(path, meta=None, cover=None, track=None, album_artist=None, compilation=False):
     """Write tags (only the values given) and the cover (JPEG bytes) into an audio file.
 
@@ -482,6 +505,7 @@ def write_tags(path, meta=None, cover=None, track=None, album_artist=None, compi
             f.save()
         else:
             return False
+        forget_failed_thumbnail(path)
         return True
     except Exception as e:                       # a tag problem must never fail the download
         debug(f"Warning: Could not tag {path}: {e}", level="WARN")
@@ -580,6 +604,7 @@ def make_album_cover(folder, song_files, record):
     with open(tmp, "rb") as f:
         record["cover_sha"] = hashlib.sha1(f.read()).hexdigest()
     os.replace(tmp, path)
+    forget_failed_thumbnail(path)
     return True
 
 

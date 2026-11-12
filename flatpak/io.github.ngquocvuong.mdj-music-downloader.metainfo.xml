@@ -86,6 +86,11 @@
   </branding>
 
   <releases>
+    <release version="1.1.2" date="2026-11-12">
+      <description>
+        <p>Songs now show their cover in the file manager even when the folder was open during the download.</p>
+      </description>
+    </release>
     <release version="1.1.1" date="2026-11-12">
       <description>
         <p>Failed downloads in the queue now say why: the summary names the reason, and pointing at a song's ✗ shows the full message. Every failed download is also written to an error log.</p>

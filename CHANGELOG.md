@@ -4,6 +4,11 @@ All notable changes to MDJ Music Downloader will be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
+## [1.1.2] - 2026-11-12
+
+### Fixed
+- **Songs showed no cover in the file manager** when its window was open during the download. It made its preview icon in the few seconds between yt-dlp saving the song and the app adding the cover, recorded "no picture" and never tried again. The app now clears that record after adding a cover, so the cover appears. (The cover was always inside the song: phones, players and car stereos showed it.)
+
 ## [1.1.1] - 2026-11-12
 
 ### Fixed

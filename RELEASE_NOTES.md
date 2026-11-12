@@ -1,4 +1,7 @@
-# MDJ Music Downloader v1.1.1 - Release Notes
+# MDJ Music Downloader v1.1.2 - Release Notes
+
+## 🖼️ What's fixed in v1.1.2
+- **Covers show in the file manager.** If the folder was open while songs downloaded, some songs could show a plain icon instead of their cover. The cover was always in the song; now the file manager shows it too.
 
 ## 🛠️ What's fixed in v1.1.1
 - **YouTube downloads work on every computer.** The app now includes Deno, the JavaScript runtime yt-dlp needs for YouTube, so nothing else has to be installed. (1.1.0 depended on the computer already having one.)
@@ -49,7 +52,7 @@
 ### v1.0.1
 - "Support Development" button now opens the new Ko-fi page: https://ko-fi.com/mdj_musicdl
 
-**Install:** download `mdj-music-downloader_1.1.1_amd64.deb` below, then run `sudo apt install ./mdj-music-downloader_1.1.1_amd64.deb`
+**Install:** download `mdj-music-downloader_1.1.2_amd64.deb` below, then run `sudo apt install ./mdj-music-downloader_1.1.2_amd64.deb`
 
 ---
 
@@ -121,9 +124,9 @@ A user-friendly application for downloading music and videos from YouTube and 10
 ## 📦 Installation
 
 ### Quick Install (Recommended)
-Download `mdj-music-downloader_1.1.1_amd64.deb` from the Releases page, then:
+Download `mdj-music-downloader_1.1.2_amd64.deb` from the Releases page, then:
 ```bash
-sudo apt install ./mdj-music-downloader_1.1.1_amd64.deb
+sudo apt install ./mdj-music-downloader_1.1.2_amd64.deb
 ```
 
 ### From Source
@@ -240,6 +243,9 @@ This application is licensed under the MIT License.
 ---
 
 ## 📝 Changelog
+
+### v1.1.2 (2026-11-12)
+- 🖼️ Covers show in the file manager even when the folder was open during the download
 
 ### v1.1.1 (2026-11-12)
 - 🌐 Deno included: YouTube works without installing anything
