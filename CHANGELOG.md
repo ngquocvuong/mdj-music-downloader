@@ -4,6 +4,19 @@ All notable changes to MDJ Music Downloader will be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
+## [1.1.1] - 2026-11-12
+
+### Fixed
+- **YouTube on other computers:** the .deb now includes Deno, the JavaScript runtime yt-dlp needs for YouTube. Before, it worked only if the computer happened to have one (most don't: Ubuntu and Mint ship a Node.js that is too old). If Node.js 22 or newer is installed and you run MDJ from source, it is used too.
+- **Failed queue songs now say why.** The summary names the reason ("Video not available", "Access denied (403 error)"...), and pointing at a song's ✗ shows the full message. Before, the queue only said "4 failed".
+- Every failed download is written to `~/.cache/mdj-music-downloader/errors.log` with the link, the reason and yt-dlp's last lines.
+- A yt-dlp that is installed but doesn't start (for example a broken pipx install) is reported as such, and running from source now skips it and uses another working yt-dlp.
+- yt-dlp and the ffmpeg it starts now use the system's own libraries, never the ones bundled inside the app, which could break conversions on computers different from the build machine.
+- The error hint in the .deb says "Click Update yt-dlp" instead of a pip command.
+
+### Added
+- Debug log without rebuilding: start the app with `MDJ_DEBUG=1 /opt/mdj-music-downloader/music_downloader` and read `/tmp/mdj-music-downloader-debug.log`.
+
 ## [1.1.0] - 2026-11-11
 
 ### Added

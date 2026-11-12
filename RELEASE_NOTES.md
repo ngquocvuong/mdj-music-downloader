@@ -1,4 +1,11 @@
-# MDJ Music Downloader v1.1.0 - Release Notes
+# MDJ Music Downloader v1.1.1 - Release Notes
+
+## 🛠️ What's fixed in v1.1.1
+- **YouTube downloads work on every computer.** The app now includes Deno, the JavaScript runtime yt-dlp needs for YouTube, so nothing else has to be installed. (1.1.0 depended on the computer already having one.)
+- **Failed songs say why.** The queue summary names the reason, and pointing at a song's ✗ shows the full message.
+- Failed downloads are written to `~/.cache/mdj-music-downloader/errors.log`.
+- A broken yt-dlp is reported clearly instead of failing every download silently.
+- Audio conversion uses the system's own libraries (more reliable on other Linux versions).
 
 ## 🆕 What's new in v1.1.0
 - **Flatpak you can build yourself** (see [flatpak/README.md](flatpak/README.md)): yt-dlp, ffmpeg and Node.js are included, so nothing else has to be installed.
@@ -42,7 +49,7 @@
 ### v1.0.1
 - "Support Development" button now opens the new Ko-fi page: https://ko-fi.com/mdj_musicdl
 
-**Install:** download `mdj-music-downloader_1.1.0_amd64.deb` below, then run `sudo apt install ./mdj-music-downloader_1.1.0_amd64.deb`
+**Install:** download `mdj-music-downloader_1.1.1_amd64.deb` below, then run `sudo apt install ./mdj-music-downloader_1.1.1_amd64.deb`
 
 ---
 
@@ -114,9 +121,9 @@ A user-friendly application for downloading music and videos from YouTube and 10
 ## 📦 Installation
 
 ### Quick Install (Recommended)
-Download `mdj-music-downloader_1.1.0_amd64.deb` from the Releases page, then:
+Download `mdj-music-downloader_1.1.1_amd64.deb` from the Releases page, then:
 ```bash
-sudo apt install ./mdj-music-downloader_1.1.0_amd64.deb
+sudo apt install ./mdj-music-downloader_1.1.1_amd64.deb
 ```
 
 ### From Source
@@ -233,6 +240,11 @@ This application is licensed under the MIT License.
 ---
 
 ## 📝 Changelog
+
+### v1.1.1 (2026-11-12)
+- 🌐 Deno included: YouTube works without installing anything
+- ❗ Failed queue songs show the reason; errors.log for every failed download
+- 🧩 Broken yt-dlp reported clearly; conversion uses the system libraries
 
 ### v1.1.0 (2026-11-11)
 - 📦 Flatpak build recipe (build it yourself)

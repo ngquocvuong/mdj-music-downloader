@@ -1,7 +1,7 @@
 #!/bin/bash
 #
 # MDJ Music Downloader - Public Release Installation Script
-# Version: 1.1.0
+# Version: 1.1.1
 # This script installs MDJ Music Downloader for all users on the system
 #
 
@@ -9,7 +9,7 @@ set -e  # Exit on error
 
 echo "╔════════════════════════════════════════════════════════════╗"
 echo "║       MDJ Music Downloader - Installation Script          ║"
-echo "║                    Version 1.1.0                           ║"
+echo "║                    Version 1.1.1                           ║"
 echo "╚════════════════════════════════════════════════════════════╝"
 echo ""
 
@@ -61,7 +61,7 @@ else
 fi
 
 # Step 4: Install yt-dlp (if not present or outdated)
-echo "[4/6] Installing yt-dlp..."
+echo "[4/6] Installing yt-dlp and Deno..."
 # Use the standalone build (yt-dlp_linux): it bundles its own Python, so it works
 # on systems whose Python is older than yt-dlp requires (e.g. Ubuntu 22.04 / Mint 21).
 if [ -x "$INSTALL_DIR/yt-dlp" ] && "$INSTALL_DIR/yt-dlp" --version > /dev/null 2>&1; then
@@ -72,6 +72,30 @@ else
     curl -fL https://github.com/yt-dlp/yt-dlp/releases/latest/download/yt-dlp_linux -o "$INSTALL_DIR/yt-dlp"
     chmod 755 "$INSTALL_DIR/yt-dlp"
     echo "   ✅ yt-dlp installed ($(du -h "$INSTALL_DIR/yt-dlp" | cut -f1))"
+fi
+
+# Deno: the JavaScript runtime yt-dlp needs for YouTube (the app uses $INSTALL_DIR/deno).
+# Taken from the source folder if ./build-deb.sh already downloaded it, else downloaded here.
+DENO_VERSION="2.9.8"
+if [ -x "$INSTALL_DIR/deno" ] && "$INSTALL_DIR/deno" --version > /dev/null 2>&1; then
+    echo "   ✅ Deno already installed"
+elif [ -x "$SCRIPT_DIR/deno" ]; then
+    install -m 755 "$SCRIPT_DIR/deno" "$INSTALL_DIR/deno"
+    echo "   ✅ Deno installed (needed by yt-dlp for YouTube)"
+else
+    echo "   Downloading Deno ${DENO_VERSION} (needed by yt-dlp for YouTube)..."
+    tmp=$(mktemp -d)
+    zip="deno-x86_64-unknown-linux-gnu.zip"
+    base="https://github.com/denoland/deno/releases/download/v${DENO_VERSION}"
+    if curl -fsSL "$base/$zip" -o "$tmp/$zip" && curl -fsSL "$base/$zip.sha256sum" -o "$tmp/$zip.sha256sum" \
+            && (cd "$tmp" && sha256sum -c --quiet "$zip.sha256sum") \
+            && python3 -c "import sys, zipfile; zipfile.ZipFile(sys.argv[1]).extract('deno', sys.argv[2])" "$tmp/$zip" "$INSTALL_DIR"; then
+        chmod 755 "$INSTALL_DIR/deno"
+        echo "   ✅ Deno installed"
+    else
+        echo "   ⚠️  Could not install Deno: some YouTube downloads may fail"
+    fi
+    rm -rf "$tmp"
 fi
 
 # Step 5: Install desktop menu entry

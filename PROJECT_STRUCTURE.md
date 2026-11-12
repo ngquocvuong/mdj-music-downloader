@@ -23,7 +23,7 @@ mdj-music-downloader/
 
 - `build/`, `dist/` – PyInstaller output
 - `debian/`, `*.deb` – package build output
-- `yt-dlp` – downloaded at package build time
+- `yt-dlp`, `deno` – downloaded at package build time
 - `__pycache__/`
 - `.flatpak-builder/` – Flatpak build cache
 

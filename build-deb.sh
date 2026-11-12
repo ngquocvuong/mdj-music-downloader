@@ -3,7 +3,7 @@
 set -e
 cd "$(dirname "$0")"
 
-VERSION="1.1.0"
+VERSION="1.1.1"
 PACKAGE_NAME="mdj-music-downloader"
 PKG="debian/${PACKAGE_NAME}"
 OUT="${PACKAGE_NAME}_${VERSION}_amd64.deb"
@@ -30,6 +30,25 @@ if [ ! -f yt-dlp ] || [ "$(head -c 4 yt-dlp | tail -c 3)" != "ELF" ]; then
 fi
 ./yt-dlp --version > /dev/null || { echo "Error: yt-dlp does not run" >&2; exit 1; }
 install -m 755 yt-dlp "$PKG/opt/mdj-music-downloader/yt-dlp"
+
+# Deno: the JavaScript runtime yt-dlp needs for YouTube (yt-dlp needs Deno 2.3+ or Node.js 22+;
+# Ubuntu 22.04 / Mint 21 ship Node.js 12, Ubuntu 24.04 ships 18, so we bring our own).
+# The app passes --js-runtimes deno:/opt/mdj-music-downloader/deno to yt-dlp.
+DENO_VERSION="2.9.8"
+DENO_ZIP="deno-x86_64-unknown-linux-gnu.zip"
+if [ ! -x deno ] || [ "$(./deno --version 2>/dev/null | head -1 | cut -d' ' -f2)" != "$DENO_VERSION" ]; then
+    echo "Downloading Deno ${DENO_VERSION}..."
+    tmp=$(mktemp -d)
+    base="https://github.com/denoland/deno/releases/download/v${DENO_VERSION}"
+    curl -fL "$base/$DENO_ZIP" -o "$tmp/$DENO_ZIP"
+    curl -fL "$base/$DENO_ZIP.sha256sum" -o "$tmp/$DENO_ZIP.sha256sum"
+    (cd "$tmp" && sha256sum -c "$DENO_ZIP.sha256sum") || { echo "Error: Deno checksum mismatch" >&2; exit 1; }
+    python3 -c "import sys, zipfile; zipfile.ZipFile(sys.argv[1]).extract('deno', sys.argv[2])" "$tmp/$DENO_ZIP" .
+    chmod 755 deno
+    rm -rf "$tmp"
+fi
+./deno --version > /dev/null || { echo "Error: deno does not run" >&2; exit 1; }
+install -m 755 deno "$PKG/opt/mdj-music-downloader/deno"
 
 # Icons (installed into the system icon theme)
 for size in 32 48 64 128 256 512; do
@@ -60,6 +79,7 @@ Description: Modern music and video downloader for Linux
  Download audio and video from YouTube and 1000+ sites.
  Features a numbered download queue, album folders with track numbers,
  cover art and tags for music players, and .m3u playlists.
+ Includes yt-dlp and the Deno JavaScript runtime that yt-dlp needs for YouTube.
 CTRLEOF
 
 cat > "$PKG/DEBIAN/postinst" <<'POSTEOF'

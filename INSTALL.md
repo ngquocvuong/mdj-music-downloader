@@ -2,8 +2,8 @@
 
 ## Easy Install (.deb package)
 
-1. Download `mdj-music-downloader_1.1.0_amd64.deb` from [Releases](https://github.com/ngquocvuong/mdj-music-downloader/releases)
-2. Install: `sudo apt install ./mdj-music-downloader_1.1.0_amd64.deb`
+1. Download `mdj-music-downloader_1.1.1_amd64.deb` from [Releases](https://github.com/ngquocvuong/mdj-music-downloader/releases)
+2. Install: `sudo apt install ./mdj-music-downloader_1.1.1_amd64.deb`
 3. Launch from the application menu, or run: `/opt/mdj-music-downloader/music_downloader`
 
 ## Run from Source
@@ -16,7 +16,7 @@ pip3 install customtkinter Pillow darkdetect packaging yt-dlp mutagen
 python3 music_downloader_customtkinter.py
 ```
 
-`mutagen` writes the cover art and tags into songs. For full YouTube support, yt-dlp needs a JavaScript runtime (Deno by default; see the [yt-dlp EJS guide](https://github.com/yt-dlp/yt-dlp/wiki/EJS)). The Flatpak includes one.
+`mutagen` writes the cover art and tags into songs. For full YouTube support, yt-dlp needs a JavaScript runtime: Deno 2.3+ (found automatically) or Node.js 22+ (used by the app when no Deno is found); see the [yt-dlp EJS guide](https://github.com/yt-dlp/yt-dlp/wiki/EJS). The `.deb` and the Flatpak include one.
 
 ## Build from Source
 

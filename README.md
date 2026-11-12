@@ -38,10 +38,10 @@ Unlike other downloaders, MDJ Music Downloader is specifically designed for musi
 ## 📥 Installation
 
 ### From Package (Recommended – Ubuntu/Debian/Linux Mint)
-1. Download `mdj-music-downloader_1.1.0_amd64.deb` from the [Releases](https://github.com/ngquocvuong/mdj-music-downloader/releases) page
+1. Download `mdj-music-downloader_1.1.1_amd64.deb` from the [Releases](https://github.com/ngquocvuong/mdj-music-downloader/releases) page
 2. Install it:
    ```bash
-   sudo apt install ./mdj-music-downloader_1.1.0_amd64.deb
+   sudo apt install ./mdj-music-downloader_1.1.1_amd64.deb
    ```
 3. Launch **MDJ Music Downloader** from your application menu
 
@@ -56,7 +56,7 @@ MDJ is not on Flathub. If you prefer a Flatpak, with yt-dlp, ffmpeg and Node.js 
 ### Requirements
 - 64-bit Linux (Ubuntu 22.04+, Linux Mint 21+, Debian 12+, Pop!_OS 22.04+, or equivalent – glibc 2.35 or newer)
 - ffmpeg (installed automatically by the .deb package)
-- Python and yt-dlp are bundled – nothing else to install
+- Python, yt-dlp and Deno (which yt-dlp needs for YouTube) are bundled – nothing else to install
 
 ## 🎬 Usage
 

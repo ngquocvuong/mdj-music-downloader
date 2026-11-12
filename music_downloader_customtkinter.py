@@ -20,9 +20,10 @@ import time
 from datetime import datetime
 
 # ═══════════════════════════════════════════════════════════════════
-# DEBUG MODE - Set to True for debugging, False for production release
+# DEBUG MODE - start the app with MDJ_DEBUG=1 to turn it on, no rebuild needed:
+#   MDJ_DEBUG=1 /opt/mdj-music-downloader/music_downloader
 # ═══════════════════════════════════════════════════════════════════
-DEBUG = False
+DEBUG = os.environ.get("MDJ_DEBUG", "").strip().lower() in ("1", "true", "yes")
 DEBUG_LOG_FILE = "/tmp/mdj-music-downloader-debug.log"
 
 def debug(msg, level="INFO"):
@@ -57,7 +58,7 @@ if DEBUG:
         pass
 
 # App version
-APP_VERSION = "1.1.0"
+APP_VERSION = "1.1.1"
 
 # Running inside a Flatpak sandbox (see flatpak/README.md)? Flatpak creates this file.
 # There, yt-dlp and ffmpeg are bundled in /app/bin (read-only) and updated with the Flatpak
@@ -84,7 +85,8 @@ def get_ytdlp_version(path, timeout=30):
     try:
         if not (os.path.isfile(path) and os.access(path, os.X_OK)):
             return None, None
-        r = subprocess.run([path, "--version"], capture_output=True, text=True, timeout=timeout)
+        r = subprocess.run([path, "--version"], capture_output=True, text=True, timeout=timeout,
+                           env=external_env(), stdin=subprocess.DEVNULL)
         if r.returncode != 0:
             return None, None
         out = r.stdout.strip()
@@ -940,6 +942,46 @@ def system_ytdlp_path():
         return os.path.join(os.path.dirname(sys.executable), "yt-dlp")
     return None
 
+
+# yt-dlp needs a JavaScript runtime to solve YouTube's challenges; without one, YouTube
+# downloads fail or miss formats. Minimum versions (yt-dlp EJS wiki): Deno 2.3, Node.js 22.
+# Linux distributions often ship an older Node.js (Ubuntu 22.04: 12, 24.04: 18), so the .deb
+# brings its own Deno and the Flatpak its own Node.js.
+NODE_MIN_MAJOR = 22
+_js_args_cache = None
+
+
+def _node_major(path):
+    try:
+        r = subprocess.run([path, "--version"], capture_output=True, text=True, timeout=10,
+                           env=external_env(), stdin=subprocess.DEVNULL)
+        m = re.match(r"v?(\d+)", r.stdout.strip())
+        return int(m.group(1)) if r.returncode == 0 and m else None
+    except Exception:
+        return None
+
+
+def js_runtime_args():
+    """--js-runtimes options for yt-dlp (empty: yt-dlp finds Deno on PATH by itself)."""
+    global _js_args_cache
+    if _js_args_cache is not None:
+        return list(_js_args_cache)
+    args = []
+    if IS_FLATPAK:
+        args = ["--js-runtimes", "node"]                    # bundled in /app/bin
+    else:
+        bundled = (os.path.join(os.path.dirname(sys.executable), "deno")
+                   if getattr(sys, "frozen", False) else None)
+        if bundled and os.path.isfile(bundled) and os.access(bundled, os.X_OK):
+            args = ["--js-runtimes", f"deno:{bundled}"]      # shipped in the .deb
+        elif not shutil.which("deno"):
+            node = shutil.which("node")
+            if node and (_node_major(node) or 0) >= NODE_MIN_MAJOR:
+                args = ["--js-runtimes", "node"]
+    debug(f"JavaScript runtime for yt-dlp: {args or 'yt-dlp default (deno on PATH, if any)'}")
+    _js_args_cache = args
+    return list(args)
+
 ctk.set_appearance_mode("dark")
 ctk.set_default_color_theme("blue")
 
@@ -1045,7 +1087,7 @@ class HoverTip:
 
     def _show(self):
         self._after = None
-        if self._tip or not self.widget.winfo_exists():
+        if self._tip or not self.text or not self.widget.winfo_exists():
             return
         import tkinter as _tk
         x = self.widget.winfo_rootx() + self.widget.winfo_width() + 6
@@ -1053,8 +1095,8 @@ class HoverTip:
         self._tip = tip = _tk.Toplevel(self.widget)
         tip.wm_overrideredirect(True)
         tip.wm_geometry(f"+{x}+{y}")
-        _tk.Label(tip, text=self.text, bg=TIP_BG, fg=TIP_TEXT, padx=6, pady=2,
-                  font=("TkDefaultFont", 9), relief="solid", borderwidth=1).pack()
+        _tk.Label(tip, text=self.text, bg=TIP_BG, fg=TIP_TEXT, padx=6, pady=2, justify="left",
+                  wraplength=380, font=("TkDefaultFont", 9), relief="solid", borderwidth=1).pack()
 
     def _hide(self, event=None):
         self._cancel()
@@ -1858,6 +1900,7 @@ class MusicDownloader:
                     update_hint = ""
                     if any(word in error_lower for word in ["403", "forbidden", "old", "update", "version"]):
                         update_hint = (" → Rebuild the Flatpak with a newer yt-dlp (see flatpak/README.md)" if IS_FLATPAK
+                                       else " → Click \"Update yt-dlp\"" if getattr(sys, "frozen", False)
                                        else " → Try updating: pip3 install -U yt-dlp")
                     self.status_label.configure(text=f"Error: {msg_data}{update_hint}", text_color="#f44336")
                     self._keep_status = True
@@ -1865,7 +1908,7 @@ class MusicDownloader:
                     self.reset_ui(keep_status=getattr(self, "_keep_status", False))
                     self._keep_status = False
                 elif msg_type in ("queue_success", "queue_failed"):
-                    run_id, item_id = msg_data
+                    run_id, item_id, reason = msg_data
                     if run_id != self._run_id:      # from a cancelled run: ignore
                         continue
                     ok = msg_type == "queue_success"
@@ -1873,8 +1916,10 @@ class MusicDownloader:
                         self._run_done = getattr(self, "_run_done", 0) + 1
                     else:
                         self._run_failed = getattr(self, "_run_failed", 0) + 1
+                        self._run_errors = getattr(self, "_run_errors", []) + [reason or "Download failed"]
                     index = self._queue_index_of(item_id)
                     if index is not None:
+                        self.download_queue[index]['error'] = None if ok else (reason or "Download failed")
                         self.update_queue_item_status(index, 'done' if ok else 'failed')
                     self.root.after(200, self.process_next_queue_item)
 
@@ -2256,6 +2301,13 @@ class MusicDownloader:
                     text=status_icons.get(status, '…'),
                     text_color=status_colors.get(status, ("#666666", "#888888"))
                 )
+                # Failed rows: pointing at the ✗ shows why (and where the full log is)
+                tip = item['widget'].get('status_tip')
+                if tip is None:
+                    tip = item['widget']['status_tip'] = HoverTip(item['widget']['status_label'], "")
+                reason = item.get('error') if status == 'failed' else None
+                tip.text = (f"{reason.strip()}\n\nFull details: {ERROR_LOG.replace(os.path.expanduser('~'), '~', 1)}"
+                            if reason else "")
                 item['widget']['progress_bar'].configure(
                     progress_color=status_colors.get(status, ("#666666", "#888888"))
                 )
@@ -2635,9 +2687,7 @@ class MusicDownloader:
 
         # Start with common args
         command = [ytdlp_path] + normalize_args(cfg.get("common_args", []))
-        if IS_FLATPAK:
-            # YouTube needs a JavaScript engine; the Flatpak bundles Node.js (yt-dlp only looks for Deno by default)
-            command += ["--js-runtimes", "node"]
+        command += js_runtime_args()     # YouTube needs a JavaScript runtime (see js_runtime_args)
 
         if is_audio:
             # Audio download
@@ -2756,6 +2806,7 @@ class MusicDownloader:
         self.current_download_index = 0
         self._queue_saved_dirs = []
         self._run_done = self._run_failed = 0  # counts for this run only
+        self._run_errors = []                  # why items failed in this run
         self.process_next_queue_item()
 
     def process_next_queue_item(self):
@@ -2797,6 +2848,16 @@ class MusicDownloader:
 
         summary = f"Queue complete: {done_count} downloaded, {failed_count} failed"
         color = "#4caf50" if failed_count == 0 else "#ff9800"
+        errors = getattr(self, "_run_errors", [])
+        if errors:
+            # The first line of each message is its short form ("Video not available.")
+            reasons = []
+            for e in errors:
+                first = e.strip().splitlines()[0].rstrip(".") if e.strip() else "Download failed"
+                if first not in reasons:
+                    reasons.append(first)
+            shown = "; ".join(reasons[:2]) + (f" (+{len(reasons) - 2} more)" if len(reasons) > 2 else "")
+            summary += f"\n✗ {shown} – point at ✗ for details"
         if saved_dirs:
             more = f" (+{len(saved_dirs) - 1} more)" if len(saved_dirs) > 1 else ""
             self.show_saved_status(summary + "\nSaved to: ", saved_dirs[0], color, more)
@@ -2904,9 +2965,8 @@ class MusicDownloader:
             found = shutil.which("yt-dlp")
             for path in ([found] if found else []) + [
                     os.path.expanduser("~/.local/bin/yt-dlp"), "/usr/local/bin/yt-dlp", "/usr/bin/yt-dlp"]:
-                if path and os.path.exists(path):
-                    candidates.append(path)
-                    break
+                if path and os.path.exists(path) and path not in candidates:
+                    candidates.append(path)     # all of them: the first one may be broken
 
         best = None  # (version_tuple, path, version_string)
         for path in candidates:
@@ -2952,10 +3012,12 @@ class MusicDownloader:
         try:
             # Run yt-dlp with --dump-json to get format info
             result = subprocess.run(
-                [ytdlp_path, "--ignore-config", "--dump-json", "--no-playlist", url],
+                [ytdlp_path, "--ignore-config", *js_runtime_args(), "--dump-json", "--no-playlist", url],
                 capture_output=True,
                 text=True,
-                timeout=30
+                timeout=30,
+                env=external_env(),
+                stdin=subprocess.DEVNULL
             )
 
             if result.returncode != 0:
@@ -3002,14 +3064,42 @@ class MusicDownloader:
             if not current():
                 return
             if kind in ("queue_success", "queue_failed"):
-                data = (run_id, item_id)
+                data = (run_id, item_id, data)       # data: why it failed (None on success)
             self.message_queue.put((kind, data))
+
+        def fail(reason, details=""):
+            """Report a failed download (queue item or single) and keep a record in errors.log."""
+            if not current():
+                return
+            log_error(f"Download failed: {url}\n{reason}" +
+                      (f"\n--- yt-dlp output (last lines) ---\n{details}" if details else ""))
+            report("queue_failed" if queue_index >= 0 else "error", reason)
+
         os.makedirs(self.output_dir, exist_ok=True)
         ytdlp_path = self.get_yt_dlp_path()
 
+        cache = getattr(self, "_ytdlp_cache", None)          # (path, version or None if it doesn't run)
+        if cache and cache[0] == ytdlp_path and cache[1] is None and \
+                (shutil.which(ytdlp_path) or os.path.exists(ytdlp_path)):
+            # It exists but doesn't run (e.g. a broken copy): say so instead of a vague failure
+            try:
+                r = subprocess.run([ytdlp_path, "--version"], capture_output=True, text=True, timeout=30,
+                                   env=external_env(), stdin=subprocess.DEVNULL)
+                details = (r.stderr or r.stdout).strip()[-1500:]
+            except Exception as e:
+                details = str(e)
+            self.invalidate_ytdlp_cache()            # look again next time (it may be repaired)
+            fix = ("Click \"Update yt-dlp\", or reinstall MDJ Music Downloader."
+                   if getattr(sys, "frozen", False) or IS_FLATPAK
+                   else "Reinstall it, e.g.: pip3 install -U yt-dlp")
+            fail(f"yt-dlp doesn't start ({ytdlp_path}).\n\n{fix}", details)
+            if queue_index < 0:
+                report("reset", None)
+            return
+
         if not shutil.which(ytdlp_path) and not os.path.exists(ytdlp_path):
             if queue_index >= 0:
-                report("queue_failed", None)
+                fail("yt-dlp not found. Please reinstall the application.")
             else:
                 # Show appropriate message based on whether app is bundled
                 if getattr(sys, 'frozen', False) or IS_FLATPAK:
@@ -3032,11 +3122,8 @@ class MusicDownloader:
             if not has_video:
                 # Audio-only content - prevent download
                 error_msg = "This URL has no video.\nPlease select 'Audio' mode."
-                if queue_index >= 0:
-                    report("queue_failed", None)
-                    report("error", error_msg)
-                else:
-                    report("error", error_msg)
+                fail(error_msg)
+                if queue_index < 0:
                     report("reset", None)
                 return
 
@@ -3082,12 +3169,16 @@ class MusicDownloader:
                 return
             self.run_in_ui(self.progress_label.configure, text="Downloading...")
             # Own process group, so Cancel can stop yt-dlp *and* the ffmpeg it starts
+            # external_env(): yt-dlp and the ffmpeg it starts must use the system's libraries,
+            # not the ones bundled inside this app (they can differ on other computers)
             proc = subprocess.Popen(
                 command,
                 stdout=subprocess.PIPE,
                 stderr=subprocess.PIPE,
+                stdin=subprocess.DEVNULL,
                 text=True, encoding="utf-8", errors="replace",
-                start_new_session=True
+                start_new_session=True,
+                env=external_env()
             )
             self.download_process = proc
             if not current():                   # cancelled just now
@@ -3187,10 +3278,8 @@ class MusicDownloader:
                                       "saved. Retry to try the missing ones again.")
                     if queue_index >= 0 and download_dir not in self._queue_saved_dirs:
                         self._queue_saved_dirs.append(download_dir)
-                if queue_index >= 0:
-                    report("queue_failed", None)
-                else:
-                    report("error", error_message)
+                tail = "\n".join(l for l in (stderr or "").strip().splitlines()[-15:])
+                fail(error_message, tail)
             else:
                 if queue_index >= 0:
                     if download_dir not in self._queue_saved_dirs:
@@ -3202,10 +3291,8 @@ class MusicDownloader:
                     report("success", download_dir)
         except Exception as error:
             if self.downloading:
-                if queue_index >= 0:
-                    report("queue_failed", None)
-                else:
-                    report("error", str(error))
+                import traceback
+                fail(f"Download error:\n{error}", traceback.format_exc()[-1500:])
         finally:
             try:
                 os.remove(archive_path)
@@ -3307,7 +3394,8 @@ class MusicDownloader:
             sites, error = None, None
             try:
                 r = subprocess.run([key[0], "--extractor-descriptions"],
-                                   capture_output=True, text=True, timeout=60)
+                                   capture_output=True, text=True, timeout=60,
+                                   env=external_env(), stdin=subprocess.DEVNULL)
                 sites = [line for line in r.stdout.splitlines() if line.strip()]
                 if not sites:
                     error = (r.stderr.strip().splitlines() or ["yt-dlp returned no sites"])[-1]
@@ -3752,7 +3840,7 @@ class MusicDownloader:
                         # Run without a URL: yt-dlp checks every option, then stops with
                         # "You must provide at least one URL" when they are all fine
                         r = subprocess.run([path] + args, capture_output=True, text=True,
-                                           timeout=30, stdin=subprocess.DEVNULL)
+                                           timeout=30, stdin=subprocess.DEVNULL, env=external_env())
                     except Exception as e:
                         self.run_in_ui(done, None, f"Could not run yt-dlp: {e}")
                         return

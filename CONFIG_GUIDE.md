@@ -183,13 +183,13 @@ App will recreate with defaults on next launch.
 
 The easiest way: open "⚙ yt-dlp Settings", Advanced tab. **Check** asks yt-dlp whether it accepts your options, and "What the app will run" shows the exact command for audio and video.
 
-For a full log, enable debug mode:
+When a download fails, the queue summary names the reason, and pointing at the song's ✗ shows the full message. Each failure is also written, with yt-dlp's last lines, to `~/.cache/mdj-music-downloader/errors.log`.
 
-1. Edit source: `music_downloader_customtkinter.py`
-2. Line 25: Set `DEBUG = True`
-3. Rebuild: `./build.sh`
-4. Run app and try download
-5. Check: `cat /tmp/mdj-music-downloader-debug.log`
+For a full log, start the app in debug mode (no rebuild needed):
+
+1. In a terminal: `MDJ_DEBUG=1 /opt/mdj-music-downloader/music_downloader` (from source: `MDJ_DEBUG=1 python3 music_downloader_customtkinter.py`)
+2. Try the download
+3. Check: `cat /tmp/mdj-music-downloader-debug.log`
 
 You'll see:
 ```
