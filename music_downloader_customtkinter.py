@@ -3473,6 +3473,10 @@ class MusicDownloader:
 
         close_btn = ctk.CTkButton(frame, text="Close", command=sites_window.destroy, height=35)
         close_btn.pack(side="bottom", pady=(0, 10), padx=20, fill="x")
+        ctk.CTkLabel(frame, text="A site being listed doesn't mean you may download from it.\n"
+                                 "Only download content you have the right to download.",
+                     font=ctk.CTkFont(size=11), text_color=("#666666", "#8a8a8a"),
+                     justify="center").pack(side="bottom", pady=(0, 8))
 
         def show_list(sites, error):
             if not sites_window.winfo_exists():
@@ -3685,9 +3689,9 @@ class MusicDownloader:
                 row(basic, "Browser", lambda p: ctk.CTkOptionMenu(
                     p, values=["Off"] + COOKIE_BROWSERS, variable=cookies_var, width=220),
                     "cookies_browser")
-                hint(basic, "Only needed when a download fails with \"Sign in to confirm\" or for "
-                            "age-restricted / members-only videos: yt-dlp then uses your browser's "
-                            "YouTube login. Close that browser before downloading.")
+                hint(basic, "Only needed when a download fails with \"Sign in to confirm\", or for "
+                            "videos your own account can watch (age-confirmed, members-only): yt-dlp "
+                            "then uses your browser's login. Close that browser before downloading.")
 
             # ---------------- Advanced tab ----------------
             section(adv, "Custom arguments", top=4)

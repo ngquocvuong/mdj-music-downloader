@@ -2,6 +2,8 @@
 
 A modern, easy-to-use desktop application for downloading audio and video from YouTube and 1000+ websites.
 
+> **Use it responsibly:** only download content you have the right to download – your own uploads, Creative Commons or public-domain works, or content the owner allows you to download. See [Legal and responsible use](#legal).
+
 ![MDJ Music Downloader](screenshot.png)
 
 ## 🎬 Demo
@@ -97,7 +99,7 @@ Click "⚙ yt-dlp Settings":
 ### Common Customizations
 
 ```bash
-# Use Firefox cookies (for age-restricted videos)
+# Use your own Firefox login (for videos your account can watch)
 --cookies-from-browser firefox
 
 # Limit download speed
@@ -112,14 +114,14 @@ Click "⚙ yt-dlp Settings":
 - **[Python](https://www.python.org/)** - Programming language
 - **[CustomTkinter](https://github.com/TomSchimansky/CustomTkinter)** - Modern UI framework
 - **[yt-dlp](https://github.com/yt-dlp/yt-dlp)** - Download engine (powers the downloads)
+- **[Deno](https://deno.com/)** - JavaScript runtime that yt-dlp uses for YouTube
+- **[mutagen](https://github.com/quodlibet/mutagen)** - Writes the cover art and tags
 
 ## 📜 License
 
-This project is licensed under the MIT License - see the [LICENSE](LICENSE) file for details.
+MDJ Music Downloader's source code is licensed under the MIT License - see the [LICENSE](LICENSE) file for details.
 
-**Third-party licenses:**
-- yt-dlp: [Unlicense](https://github.com/yt-dlp/yt-dlp/blob/master/LICENSE) (Public Domain)
-- CustomTkinter: [MIT License](https://github.com/TomSchimansky/CustomTkinter/blob/master/LICENSE)
+The `.deb` package also contains software made by others (yt-dlp, Deno, Python, CustomTkinter, mutagen and more), each under its own license. Some of these parts are GPL-licensed, so the packaged program as a whole is distributed under the GPL-3.0-or-later; all of its source code is available. See [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md) for the full list, the license texts and where to get the source. The package installs this file in `/usr/share/doc/mdj-music-downloader/`.
 
 ## 💖 Support Development
 
@@ -147,16 +149,37 @@ Contributions are welcome! Feel free to:
 - **Issues**: [GitHub Issues](https://github.com/ngquocvuong/mdj-music-downloader/issues)
 - **Email**: blackhawk_7585@icloud.com (for private inquiries)
 
-## ⚖️ Disclaimer
+<a name="legal"></a>
 
-MDJ Music Downloader is a tool for downloading publicly accessible content. Users are responsible for complying with copyright laws and website terms of service. This tool should only be used for:
-- Personal backups of your own content
-- Downloading Creative Commons or public domain content
-- Content you have permission to download
+## ⚖️ Legal and responsible use
+
+MDJ Music Downloader is a general-purpose tool, like a web browser or a screen recorder. What you download with it, and whether you are allowed to, is your responsibility.
+
+**Only download content you have the right to download**, for example:
+- videos and music you made and uploaded yourself
+- works under a Creative Commons license that allows it, or in the public domain
+- content whose owner gives you permission to download it
+
+**Please respect the rules:**
+- **Copyright:** most music and videos online are protected by copyright. Downloading them without the owner's permission may be illegal where you live, even for personal use. The laws differ from country to country.
+- **Terms of service:** websites have their own rules. YouTube's Terms of Service, for example, do not allow downloading unless YouTube shows a download button or link, or YouTube gives you written permission. Read the terms of each site you use.
+- **Don't share or sell** what you download unless you have the rights to do so.
+
+**What MDJ does not do:**
+- It does not break DRM or copy protection, and it does not download from paid streaming services that use them (such as Spotify, Apple Music, Netflix or Disney+).
+- It does not get around paywalls, logins or region locks. If you choose to sign in with your browser's cookies, it only uses your own account, with the access that account already has.
+- It does not host, store, index or share any content. Everything is downloaded directly from the site to your own computer.
+
+**No affiliation:** MDJ Music Downloader is an independent project. It is not affiliated with, endorsed by or sponsored by YouTube, Google or any other website it works with. All product names, logos and brands belong to their owners and are used only to describe compatibility.
+
+**No warranty:** the software is provided "as is", without warranty of any kind (see [LICENSE](LICENSE)). The authors are not responsible for how it is used.
+
+**Rights holders:** if you believe this project itself (its code, documentation or images) infringes your rights, please contact blackhawk_7585@icloud.com and it will be looked at promptly.
 
 ## 🙏 Acknowledgments
 
 - **yt-dlp team** for the amazing download engine
+- **Blender Foundation** for the Creative Commons films used in the screenshots and demo videos
 - **CustomTkinter** for the beautiful UI framework
 - **All contributors and supporters** who make this project possible
 

@@ -1,5 +1,7 @@
 # yt-dlp Options Quick Reference
 
+> Only download content you have the right to download, and follow each site's terms of service. These options are for content you are allowed to access; they are not a way around copyright, DRM, paywalls or region locks. See [Legal and responsible use](README.md#legal).
+
 Add these in **⚙ yt-dlp Settings → Advanced → Custom arguments**, one option per line (an option and its value can share a line, e.g. `--limit-rate 1M`). Click **Check** to make sure yt-dlp accepts them.
 
 **Already handled by MDJ** — you usually don't need these:
@@ -60,10 +62,12 @@ Add these in **⚙ yt-dlp Settings → Advanced → Custom arguments**, one opti
 --socket-timeout 30
 ```
 
-## 🔐 Authentication Options
+## 🔐 Signing In With Your Own Account
+
+For videos your own account can watch (for example after confirming your age, or as a channel member). yt-dlp uses your login only with the access your account already has.
 
 ```bash
-# Browser cookies
+# Browser cookies (your own login)
 --cookies-from-browser firefox
 --cookies-from-browser chrome
 --cookies-from-browser edge
@@ -74,17 +78,6 @@ Add these in **⚙ yt-dlp Settings → Advanced → Custom arguments**, one opti
 # Username/password (site-specific)
 --username YOUR_USERNAME
 --password YOUR_PASSWORD
-```
-
-## 🌍 Geographic Options
-
-```bash
-# Bypass restrictions
---geo-bypass
-
-# Specific country
---geo-bypass-country US
---geo-bypass-country JP
 ```
 
 ## 📝 Metadata Options
@@ -191,20 +184,10 @@ For plain yt-dlp. In MDJ, file names and folders come from the Output Folder, Al
 --restrict-filenames
 ```
 
-## 🚫 Common Restrictions Bypass
+## 🐢 Being Gentle With Servers
 
 ```bash
-# Age-restricted videos
---cookies-from-browser firefox
-
-# Geo-blocked content
---geo-bypass
---geo-bypass-country US
-
-# Private/unlisted videos
---cookies-from-browser chrome
-
-# Rate-limited downloads
+# "Too many requests" errors: slow down
 --limit-rate 1M
 --sleep-interval 5
 ```
@@ -233,9 +216,10 @@ MDJ already skips songs you have, so no archive file is needed:
 --playlist-reverse --sleep-interval 3
 ```
 
-### Private/Age-Restricted Content
+### Videos That Need Your Sign-In
+For videos your own account can watch:
 ```bash
---cookies-from-browser firefox --age-limit 0
+--cookies-from-browser firefox
 ```
 
 ## 🔗 Full Documentation

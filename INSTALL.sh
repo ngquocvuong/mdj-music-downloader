@@ -98,6 +98,10 @@ else
     rm -rf "$tmp"
 fi
 
+# Licenses (MIT for MDJ itself; the third-party parts and their licenses)
+mkdir -p /usr/share/doc/mdj-music-downloader
+cp "$SCRIPT_DIR/LICENSE" "$SCRIPT_DIR/THIRD_PARTY_NOTICES.md" /usr/share/doc/mdj-music-downloader/ 2>/dev/null || true
+
 # Step 5: Install desktop menu entry
 echo "[5/6] Installing desktop menu entry..."
 if [ -f "$SCRIPT_DIR/mdj-music-downloader.desktop" ]; then

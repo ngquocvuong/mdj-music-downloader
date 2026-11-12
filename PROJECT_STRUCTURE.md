@@ -16,6 +16,7 @@ mdj-music-downloader/
 ├── README.md, INSTALL.md, CHANGELOG.md, RELEASE_NOTES.md
 ├── CONFIG_GUIDE.md, YT-DLP_OPTIONS_REFERENCE.md
 ├── CONTRIBUTING.md, PROJECT_STRUCTURE.md
+├── THIRD_PARTY_NOTICES.md              # Licenses of the software inside the .deb, and where its source is
 └── LICENSE                             # MIT License
 ```
 

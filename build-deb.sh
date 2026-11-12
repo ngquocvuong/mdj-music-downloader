@@ -62,6 +62,25 @@ install -m 644 icons/mdj-music-downloader.svg "$PKG/usr/share/icons/hicolor/scal
 # Menu entry
 install -m 644 mdj-music-downloader.desktop "$PKG/usr/share/applications/mdj-music-downloader.desktop"
 
+# Licenses: MDJ's own (MIT) and the third-party parts inside the package (some GPL)
+DOC="$PKG/usr/share/doc/${PACKAGE_NAME}"
+mkdir -p "$DOC"
+install -m 644 LICENSE "$DOC/LICENSE"
+install -m 644 THIRD_PARTY_NOTICES.md "$DOC/THIRD_PARTY_NOTICES.md"
+cat > "$DOC/copyright" <<COPYEOF
+MDJ Music Downloader
+Source: https://github.com/ngquocvuong/mdj-music-downloader
+
+MDJ's own code: Copyright (c) 2026 MDJ Digital LLC, MIT License (see LICENSE).
+
+This package also contains third-party software, some of it under the GPL
+(mutagen GPL-2.0+, libimagequant GPL-3.0+, jbigkit GPL-2.0+), so the packaged
+program as a whole is distributed under the GPL-3.0-or-later. Where to get
+all source code, and every component's license: THIRD_PARTY_NOTICES.md.
+GPL texts: /usr/share/common-licenses/GPL-2 and GPL-3.
+COPYEOF
+chmod 644 "$DOC/copyright"
+
 find "$PKG" -type d -exec chmod 755 {} +
 INSTALLED_SIZE=$(du -sk "$PKG" | cut -f1)
 cat > "$PKG/DEBIAN/control" <<CTRLEOF
@@ -80,6 +99,7 @@ Description: Modern music and video downloader for Linux
  Features a numbered download queue, album folders with track numbers,
  cover art and tags for music players, and .m3u playlists.
  Includes yt-dlp and the Deno JavaScript runtime that yt-dlp needs for YouTube.
+ Only download content you have the right to download.
 CTRLEOF
 
 cat > "$PKG/DEBIAN/postinst" <<'POSTEOF'

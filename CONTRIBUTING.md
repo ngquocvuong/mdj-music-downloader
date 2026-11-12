@@ -28,6 +28,16 @@ python3 music_downloader_customtkinter.py  # Run from source
 ./build.sh                                 # Build executable
 ```
 
+## What We Don't Accept
+
+MDJ is for content people have the right to download (see [Legal and responsible use](README.md#legal)). Contributions that do any of the following will not be accepted:
+- breaking or getting around DRM, copy protection, paywalls or region locks
+- downloading from paid streaming services that protect their content (Spotify, Apple Music, Netflix...)
+- uploading, sharing or hosting downloaded content
+- bundled links, lists or presets for downloading copyrighted material
+
+By contributing, you agree that your contribution is licensed under the project's [MIT License](LICENSE).
+
 ## Areas for Help
 
 - Bug fixes

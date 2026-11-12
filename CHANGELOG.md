@@ -4,6 +4,17 @@ All notable changes to MDJ Music Downloader will be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
+## [Unreleased]
+
+### Added
+- **Legal and responsible use** section in the README (only download what you have the right to; copyright and terms of service; no DRM breaking; no affiliation with YouTube or other sites; no warranty; contact for rights holders), and a short notice at the top.
+- `THIRD_PARTY_NOTICES.md`: the licenses of everything inside the `.deb` (including the GPL parts) and where to get the source. The package installs it, with `LICENSE` and a `copyright` file, in `/usr/share/doc/mdj-music-downloader/`.
+- The Supported Sites window says that a listed site doesn't mean downloading from it is allowed.
+- CONTRIBUTING lists contributions that won't be accepted (DRM or paywall circumvention, protected streaming services, sharing content).
+
+### Changed
+- The yt-dlp options guide no longer explains how to get around region locks or age limits; signing in is described as using your own account.
+
 ## [1.1.2] - 2026-11-12
 
 ### Fixed

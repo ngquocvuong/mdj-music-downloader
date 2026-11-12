@@ -226,11 +226,11 @@ When reporting issues, please include:
 
 ---
 
-## ⚖️ License
+## ⚖️ License and responsible use
 
-This application is licensed under the MIT License.
+MDJ Music Downloader's source code is licensed under the MIT License. The `.deb` also contains third-party software under its own licenses (some GPL); see [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md).
 
-**Note**: This application uses yt-dlp which is released under the Unlicense. Please ensure you comply with the terms of service of the websites you download from.
+**Only download content you have the right to download**, and follow copyright law and each site's terms of service. MDJ does not break DRM or copy protection. See [Legal and responsible use](README.md#legal).
 
 ---
 

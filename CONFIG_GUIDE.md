@@ -127,7 +127,7 @@ Examples:
 `true` (default): title, artist and date tags. Songs in an Album/Folder always get the album name and track number, even when this is `false`.
 
 ### `ytdlp_config.cookies_browser`
-Use a browser's login for age-restricted videos, e.g. `"firefox"`. `""` (default) = off. Not available in the Flatpak.
+Use your own login from a browser, for videos your account can watch (for example age-confirmed or members-only), e.g. `"firefox"`. `""` (default) = off. Not available in the Flatpak.
 
 ### `ytdlp_config.custom_args`
 Your custom yt-dlp arguments (applied to all downloads).
@@ -136,8 +136,7 @@ Example:
 ```json
 "custom_args": [
   "--limit-rate", "1M",
-  "--geo-bypass",
-  "--proxy", "socks5://127.0.0.1:1080"
+  "--sleep-interval", "3"
 ]
 ```
 
