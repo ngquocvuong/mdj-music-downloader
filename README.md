@@ -23,6 +23,7 @@ https://github.com/user-attachments/assets/6b4f6965-2db1-4ee1-baed-48ecad48eee8
 - ⏭️ **No Duplicates** - Songs you already have are skipped
 - 🎼 **Playlist Generation** - Auto-creates .m3u playlist files
 - 💾 **Queue Export/Import** - Save a queue as `<album>.txt` and load it again later; Import fills in the album name
+- 🧾 **Clear Error Messages** - A short reason in the status line and a **Details** button with the full message and a **Copy** button, for asking for help
 - 📂 **Open Folder in One Click** - Click the folder path shown after "Saved to:" when a download finishes
 - 🖥️ **Multi-Monitor Support** - Proper window positioning
 - 👥 **Multi-User Ready** - Each user gets their own settings
@@ -40,10 +41,10 @@ Unlike other downloaders, MDJ Music Downloader is specifically designed for musi
 ## 📥 Installation
 
 ### From Package (Recommended – Ubuntu/Debian/Linux Mint)
-1. Download `mdj-music-downloader_1.1.2_amd64.deb` from the [Releases](https://github.com/ngquocvuong/mdj-music-downloader/releases) page
+1. Download `mdj-music-downloader_1.1.3_amd64.deb` from the [Releases](https://github.com/ngquocvuong/mdj-music-downloader/releases) page
 2. Install it:
    ```bash
-   sudo apt install ./mdj-music-downloader_1.1.2_amd64.deb
+   sudo apt install ./mdj-music-downloader_1.1.3_amd64.deb
    ```
 3. Launch **MDJ Music Downloader** from your application menu
 
@@ -74,6 +75,7 @@ MDJ is not on Flathub. If you prefer a Flatpak, with yt-dlp, ffmpeg and Node.js 
 - A link to one song inside a playlist downloads only that song.
 - **Export** saves the queue as a .txt file named after the album (e.g. `Summer Hits.txt`); **Import** loads it and fills in the album name. Good for backups and sharing.
 - Playlists (.m3u) work on most MP3 players and media software.
+- If a download fails, click **Details** next to the message to see everything, and **Copy** to paste it into a bug report.
 - File names work on USB sticks and SD cards too: characters they don't allow are replaced (the title tag keeps the real title).
 
 ## ⚙️ Configuration (Optional)

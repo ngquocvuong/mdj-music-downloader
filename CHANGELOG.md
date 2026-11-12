@@ -4,7 +4,7 @@ All notable changes to MDJ Music Downloader will be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
-## [Unreleased]
+## [1.1.3] - 2026-11-12
 
 ### Added
 - **Legal and responsible use** section in the README (only download what you have the right to; copyright and terms of service; no DRM breaking; no affiliation with YouTube or other sites; no warranty; contact for rights holders), and a short notice at the top.
@@ -14,6 +14,12 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ### Changed
 - The yt-dlp options guide no longer explains how to get around region locks or age limits; signing in is described as using your own account.
+
+### Fixed
+- **Playlists: each song gets its cover, tags and track number as soon as it is saved**, instead of all at once when the whole playlist has finished. During a long playlist the songs no longer sit without covers, and the album's `.m3u` playlist grows with every song.
+- **Error details one click away:** when a download fails, the status line shows a short message with a **Details** button, instead of a long message that was cut off. The button has its own teal colour and background, so it stands out from the red message and clearly looks clickable. No window opens by itself. Details opens a window with the full message and a **Copy** button that copies the message, the link, the app and yt-dlp versions and yt-dlp's last lines, for asking for help. After a queue, Details lists every failed link with its reason.
+- When YouTube blocks downloads with "Sign in to confirm you're not a bot" (it does this for a while after many downloads in a short time), the app says so and suggests waiting or signing in, instead of a general "check your internet connection" message.
+- **Cancel keeps the finished songs complete:** songs saved before Cancel (or before closing the app) keep their cover, tags and number, and the album gets its `.m3u` and `cover.jpg`. Before, they were left without any of these.
 
 ## [1.1.2] - 2026-11-12
 

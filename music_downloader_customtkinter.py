@@ -58,7 +58,7 @@ if DEBUG:
         pass
 
 # App version
-APP_VERSION = "1.1.2"
+APP_VERSION = "1.1.3"
 
 # Running inside a Flatpak sandbox (see flatpak/README.md)? Flatpak creates this file.
 # There, yt-dlp and ffmpeg are bundled in /app/bin (read-only) and updated with the Flatpak
@@ -1130,6 +1130,36 @@ class HoverTip:
             self._tip = None
 
 
+_copy_icon = {}
+
+
+def copy_icon():
+    """A small "copy" icon (two overlapping pages), drawn with plain Tk so it needs no extra
+    library or emoji font (Pillow's Tk part isn't available everywhere). None if Tk can't."""
+    mode = ctk.get_appearance_mode()
+    if mode not in _copy_icon:
+        try:
+            color = "#dce4ee" if mode == "Dark" else "#3c3c3c"
+            img = tk.PhotoImage(width=16, height=16)
+            def rect(x0, y0, x1, y1, clear_inside=False):
+                if clear_inside:                           # the front page hides the back one
+                    for x in range(x0, x1 + 1):
+                        for y in range(y0, y1 + 1):
+                            img.transparency_set(x, y, True)
+                for x in range(x0, x1 + 1):
+                    for y in (y0, y0 + 1, y1 - 1, y1):
+                        img.put(color, (x, y))
+                for y in range(y0, y1 + 1):
+                    for x in (x0, x0 + 1, x1 - 1, x1):
+                        img.put(color, (x, y))
+            rect(1, 1, 10, 11)                             # back page
+            rect(5, 5, 14, 15, clear_inside=True)          # front page
+            _copy_icon[mode] = img
+        except Exception:
+            _copy_icon[mode] = None
+    return _copy_icon[mode]
+
+
 class TooltipNotification:
     """Small pop-up message that fades out by itself.
 
@@ -1293,6 +1323,18 @@ class MusicDownloader:
                     "1. Close this application\n"
                     "2. Reinstall the application from the latest version\n"
                     "3. Contact support if the issue persists")
+
+        elif "not a bot" in stderr_lower or "sign in to confirm" in stderr_lower:
+            # YouTube blocks a connection for a while after many downloads in a short time
+            fix = ("2. Or sign in: ⚙ yt-dlp Settings → Sign-in → choose the browser where you are\n"
+                   "   logged in to YouTube (close that browser first)"
+                   if not IS_FLATPAK else
+                   "2. Or try again later from another network")
+            return ("YouTube asks to confirm you're not a robot.\n\n"
+                    "YouTube does this for a while after many downloads in a short time.\n"
+                    "Try:\n"
+                    "1. Wait an hour or two, then click Download again (songs you already have are skipped)\n"
+                    f"{fix}")
 
         elif "permission denied" in stderr_lower or "errno 13" in stderr_lower:
             return ("Permission error.\n\n"
@@ -1835,6 +1877,64 @@ class MusicDownloader:
         x, y = centered_position(self.root, width, height)
         self.root.geometry(f"{width}x{height}+{x}+{y}")
 
+    def show_error_dialog(self, title, message, copy_text=None):
+        """Popup for a failed download: the full message in a box you can scroll and select,
+        a Copy button (message, link, versions and yt-dlp's last lines, for bug reports) and
+        Close in the middle. Only one at a time: a new one replaces the old one."""
+        old = getattr(self, "_error_window", None)
+        if old is not None and old.winfo_exists():
+            old.destroy()
+        win = ctk.CTkToplevel(self.root)
+        self._error_window = win
+        win.title(title)
+        win.attributes('-topmost', True)
+        self.center_dialog(win, 540, 400)
+
+        frame = ctk.CTkFrame(win, corner_radius=15)
+        frame.pack(expand=True, fill="both", padx=15, pady=15)
+
+        head = ctk.CTkFrame(frame, fg_color="transparent")
+        head.pack(fill="x", padx=20, pady=(15, 10))
+        ctk.CTkLabel(head, text="✖  " + title, font=ctk.CTkFont(size=18), text_color="#f44336",
+                     anchor="w").pack(side="left", fill="x", expand=True)
+
+        def copy():
+            self.root.clipboard_clear()
+            self.root.clipboard_append(copy_text or message)
+            copy_btn.configure(text="Copied")
+            win.after(1500, lambda: copy_btn.winfo_exists() and copy_btn.configure(text="Copy"))
+        import warnings
+        with warnings.catch_warnings():           # "not a CTkImage": fine for a 16 px icon
+            warnings.simplefilter("ignore")
+            copy_btn = ctk.CTkButton(head, text="Copy", image=copy_icon(), compound="left", width=86, height=28,
+                                     fg_color="transparent", border_width=1, border_color=("#9a9a9a", "#5a5a5a"),
+                                     hover_color=("#d6d6d6", ACCENT_DIM), text_color=("#1a1a1a", LIGHT_TEXT),
+                                     font=ctk.CTkFont(size=12), command=copy)
+        copy_btn.pack(side="right")
+        HoverTip(copy_btn, "Copy the message and details (for a bug report)")
+
+        box = ctk.CTkTextbox(frame, wrap="word", font=ctk.CTkFont(size=13), border_width=1,
+                             border_color=("#c4c4c4", "#4a4a4a"))
+        box.pack(fill="both", expand=True, padx=20, pady=(0, 12))
+        box.insert("1.0", message.strip())
+        box.configure(state="disabled")             # read-only; text can still be selected
+
+        ctk.CTkButton(frame, text="Close", width=150, height=35, command=win.destroy).pack(pady=(0, 15))
+        win.bind("<Escape>", lambda e: win.destroy())
+        win.after(100, win.focus_force)
+
+    def _error_copy_text(self, reason, url="", details=""):
+        """What Copy puts on the clipboard: enough for someone else to see what went wrong."""
+        ytdlp = getattr(self, "_ytdlp_cache", None)
+        lines = [f"MDJ Music Downloader v{APP_VERSION}"
+                 + (f", yt-dlp {ytdlp[1]}" if ytdlp and ytdlp[1] else "")]
+        if url:
+            lines.append(f"Link: {url}")
+        lines += ["", reason.strip()]
+        if details:
+            lines += ["", "--- yt-dlp output (last lines) ---", details.strip()]
+        return "\n".join(lines)
+
     def center_dialog(self, dialog, width, height):
         """Center a dialog window on the main window"""
         self.root.update_idletasks()
@@ -1921,13 +2021,21 @@ class MusicDownloader:
                         text="✖ Download failed",
                         text_color="#f44336"
                     ))
-                    error_lower = str(msg_data).lower()
+                    info = msg_data if isinstance(msg_data, dict) else {"reason": str(msg_data)}
+                    reason = info.get("reason") or "Download failed"
+                    error_lower = reason.lower()
                     update_hint = ""
                     if any(word in error_lower for word in ["403", "forbidden", "old", "update", "version"]):
-                        update_hint = (" → Rebuild the Flatpak with a newer yt-dlp (see flatpak/README.md)" if IS_FLATPAK
-                                       else " → Click \"Update yt-dlp\"" if getattr(sys, "frozen", False)
-                                       else " → Try updating: pip3 install -U yt-dlp")
-                    self.status_label.configure(text=f"Error: {msg_data}{update_hint}", text_color="#f44336")
+                        update_hint = ("Rebuild the Flatpak with a newer yt-dlp (see flatpak/README.md)" if IS_FLATPAK
+                                       else "Click \"Update yt-dlp\"" if getattr(sys, "frozen", False)
+                                       else "Try updating: pip3 install -U yt-dlp")
+                    # The status line only has room for the short form; the popup has it all
+                    short = reason.strip().splitlines()[0].rstrip(".") if reason.strip() else "Download failed"
+                    message = reason + (f"\n\nAlso: {update_hint}" if update_hint else "")
+                    copy_text = self._error_copy_text(message, info.get("url", ""), info.get("details", ""))
+                    self.show_status([(f"✖ {short}   ", None),
+                                      ("Details", lambda m=message, c=copy_text:
+                                          self.show_error_dialog("Download failed", m, c))], "#f44336")
                     self._keep_status = True
                 elif msg_type == "reset":
                     self.reset_ui(keep_status=getattr(self, "_keep_status", False))
@@ -1941,10 +2049,13 @@ class MusicDownloader:
                         self._run_done = getattr(self, "_run_done", 0) + 1
                     else:
                         self._run_failed = getattr(self, "_run_failed", 0) + 1
-                        self._run_errors = getattr(self, "_run_errors", []) + [reason or "Download failed"]
+                        info = reason if isinstance(reason, dict) else {"reason": reason or "Download failed"}
+                        info["reason"] = info.get("reason") or "Download failed"
+                        reason = info["reason"]
+                        self._run_errors = getattr(self, "_run_errors", []) + [info]
                     index = self._queue_index_of(item_id)
                     if index is not None:
-                        self.download_queue[index]['error'] = None if ok else (reason or "Download failed")
+                        self.download_queue[index]['error'] = None if ok else reason
                         self.update_queue_item_status(index, 'done' if ok else 'failed')
                     self.root.after(200, self.process_next_queue_item)
 
@@ -1968,10 +2079,8 @@ class MusicDownloader:
             cursor="arrow", takefocus=0, insertwidth=0,
             selectbackground=bg, inactiveselectbackground=bg, exportselection=False)
         self.status_text.tag_configure("all", justify="center")
-        self.status_text.tag_configure("link", underline=False)
-        self.status_text.tag_bind("link", "<Enter>", self._on_link_enter)
-        self.status_text.tag_bind("link", "<Leave>", self._on_link_leave)
-        self.status_text.tag_bind("link", "<Button-1>", self._on_link_click)
+        self._status_link_tags = []
+        self._status_chip_tags = set()
         self._fit_pending = False
         self.status_text.bind("<Configure>", lambda e: self._schedule_fit_status_text())
         self.status_text.configure(state="disabled")
@@ -1980,32 +2089,61 @@ class MusicDownloader:
 
         def configure(*args, **kwargs):
             # Any other text written to the status line turns the "Saved to" view off
-            if "text" in kwargs and self._status_link_dir and kwargs["text"] != self._status_link_text:
+            if "text" in kwargs and self._status_link_text is not None and kwargs["text"] != self._status_link_text:
                 self._hide_saved_status()
             return original_configure(*args, **kwargs)
 
         self._status_label_configure = original_configure
         self.status_label.configure = configure
 
-    def show_saved_status(self, before, folder, color, after=""):
-        """Show `before + folder + after`; only `folder` is clickable (underlined on hover) and opens it."""
+    @staticmethod
+    def _short_path(folder):
         home = os.path.expanduser("~")
-        shown = "~" + folder[len(home):] if folder == home or folder.startswith(home + "/") else folder
-        text = before + shown + after
+        return "~" + folder[len(home):] if folder == home or folder.startswith(home + "/") else folder
+
+    def show_status(self, parts, color):
+        """Status line with clickable parts, like links on a web page.
+
+        parts: [(text, action)]. action None = plain text; a folder path = the text opens that
+        folder; a function = the text calls it. Links are underlined while the mouse is on them."""
+        text = "".join(t for t, _ in parts)
         self._status_label_configure(text=text, text_color=color)  # keep label text in sync (cget / tests)
-        self._status_link_dir, self._status_link_text = folder, text
+        self._status_link_text = text
+        self._status_link_dir = next((a for _, a in parts if isinstance(a, str)), None)
         st = self.status_text
         st.configure(state="normal")
         st.delete("1.0", "end")
-        st.insert("end", before, ("all",))
-        st.insert("end", shown, ("all", "link"))
-        st.insert("end", after, ("all",))
+        for tag in self._status_link_tags:
+            st.tag_delete(tag)
+        self._status_link_tags = []
+        self._status_chip_tags = set()
+        for n, (part, action) in enumerate(parts):
+            if action is None:
+                st.insert("end", part, ("all",))
+                continue
+            tag = f"link{n}"
+            self._status_link_tags.append(tag)
+            if callable(action):
+                # A button-like chip (e.g. "Details"): its own colour and background, so it doesn't
+                # blend into the red/orange message next to it and clearly looks clickable.
+                self._status_chip_tags.add(tag)
+                st.insert("end", f" {part.strip()} ", ("all", tag))
+                st.tag_configure(tag, foreground=ACCENT_FG, background=ACCENT_DIM, underline=False)
+            else:
+                st.insert("end", part, ("all", tag))
+                st.tag_configure(tag, underline=False)
+            st.tag_bind(tag, "<Enter>", lambda e, t=tag: self._on_link_enter(t))
+            st.tag_bind(tag, "<Leave>", lambda e, t=tag: self._on_link_leave(t))
+            st.tag_bind(tag, "<Button-1>", lambda e, a=action: self._on_link_click(a))
         st.configure(state="disabled", fg=color)
-        st.tag_configure("link", underline=False)
         if not st.winfo_manager():
             st.pack(after=self.status_label, **self._status_pack)  # same spot as the label
         self.status_label.pack_forget()
         self._schedule_fit_status_text()
+
+    def show_saved_status(self, before, folder, color, after=""):
+        """Show `before + folder + after`; only `folder` is clickable (underlined on hover) and opens it."""
+        self.show_status([(before, None), (self._short_path(folder), folder), (after, None)], color)
 
     def _hide_saved_status(self):
         self._status_link_dir = self._status_link_text = None
@@ -2039,16 +2177,28 @@ class MusicDownloader:
         except tk.TclError:
             pass
 
-    def _on_link_enter(self, event=None):
-        self.status_text.tag_configure("link", underline=True)
+    def _is_chip(self, tag):
+        return tag in self._status_chip_tags
+
+    def _on_link_enter(self, tag):
+        if self._is_chip(tag):
+            self.status_text.tag_configure(tag, background=ACCENT_HOVER, foreground=LIGHT_TEXT)
+        else:
+            self.status_text.tag_configure(tag, underline=True)
         self.status_text.configure(cursor="hand2")
 
-    def _on_link_leave(self, event=None):
-        self.status_text.tag_configure("link", underline=False)
+    def _on_link_leave(self, tag):
+        if self._is_chip(tag):
+            self.status_text.tag_configure(tag, background=ACCENT_DIM, foreground=ACCENT_FG)
+        else:
+            self.status_text.tag_configure(tag, underline=False)
         self.status_text.configure(cursor="arrow")
 
-    def _on_link_click(self, event=None):
-        folder = self._status_link_dir
+    def _on_link_click(self, action):
+        if callable(action):
+            action()
+            return
+        folder = action
         if not folder:
             return
         if not os.path.isdir(folder):
@@ -2075,7 +2225,7 @@ class MusicDownloader:
         if version:
             debug(f"yt-dlp version check OK: {version} ({path})")
             # All good: don't overwrite a download in progress or a result the user is reading
-            if not self.downloading and not self._status_link_dir:
+            if not self.downloading and self._status_link_text is None:
                 self.status_label.configure(text=f"v{APP_VERSION}", text_color=("#666666", "#888888"))
         elif not exists:
             self.status_label.configure(
@@ -2876,16 +3026,37 @@ class MusicDownloader:
         errors = getattr(self, "_run_errors", [])
         if errors:
             # The first line of each message is its short form ("Video not available.")
+            def short(e):
+                r = e["reason"].strip()
+                return r.splitlines()[0].rstrip(".") if r else "Download failed"
             reasons = []
             for e in errors:
-                first = e.strip().splitlines()[0].rstrip(".") if e.strip() else "Download failed"
-                if first not in reasons:
-                    reasons.append(first)
+                if short(e) not in reasons:
+                    reasons.append(short(e))
             shown = "; ".join(reasons[:2]) + (f" (+{len(reasons) - 2} more)" if len(reasons) > 2 else "")
-            summary += f"\n✗ {shown} – point at ✗ for details"
+            # Details opens one window for the whole run: each failed link with its reason
+            total = done_count + failed_count
+            lines = [f"{failed_count} of {total} downloads failed:" if total > 1 else "The download failed:", ""]
+            for i, e in enumerate(errors, 1):
+                lines.append(f"{i}. {e.get('url') or '(link)'}\n    {short(e)}")
+            if len(reasons) == 1:
+                lines += ["", errors[0]["reason"].strip()]   # one cause: show its full advice
+            lines += ["", "Click Download again to retry the failed ones (songs you have are skipped). "
+                          "Point at a ✗ in the queue to see that song's message."]
+            copy = "\n\n".join(self._error_copy_text(e["reason"], e.get("url", ""), e.get("details", ""))
+                                for e in errors)
+            title = f"{failed_count} downloads failed" if failed_count > 1 else "Download failed"
+            message = "\n".join(lines)
+            details = [(f"\n✗ {shown}  ", None),
+                       ("Details", lambda: self.show_error_dialog(title, message, copy))]
+        else:
+            details = []
+        parts = [(summary, None)] + details
         if saved_dirs:
             more = f" (+{len(saved_dirs) - 1} more)" if len(saved_dirs) > 1 else ""
-            self.show_saved_status(summary + "\nSaved to: ", saved_dirs[0], color, more)
+            parts += [("\nSaved to: ", None), (self._short_path(saved_dirs[0]), saved_dirs[0]), (more, None)]
+        if len(parts) > 1:
+            self.show_status(parts, color)
         else:
             self.status_label.configure(text=summary, text_color=color)
         self._keep_status = True  # don't let the following "reset" clear it
@@ -3098,7 +3269,8 @@ class MusicDownloader:
                 return
             log_error(f"Download failed: {url}\n{reason}" +
                       (f"\n--- yt-dlp output (last lines) ---\n{details}" if details else ""))
-            report("queue_failed" if queue_index >= 0 else "error", reason)
+            report("queue_failed" if queue_index >= 0 else "error",
+                   {"reason": reason, "details": details, "url": url})
 
         os.makedirs(self.output_dir, exist_ok=True)
         ytdlp_path = self.get_yt_dlp_path()
@@ -3208,21 +3380,24 @@ class MusicDownloader:
             self.download_process = proc
             if not current():                   # cancelled just now
                 self._stop_process(proc)
-            stdout, stderr = proc.communicate()
 
-            if not current():
-                return
+            # stderr is read in the background (yt-dlp could block on a full pipe otherwise);
+            # stdout has one SAVED_PRINT line per saved file, which is handled right away.
+            err_lines = []
+            err_reader = threading.Thread(target=lambda: err_lines.extend(proc.stderr), daemon=True)
+            err_reader.start()
 
-            # Files this link saved. Handled even when yt-dlp reports an error: in a playlist
-            # it skips an unavailable video, saves the others and only then exits with an error.
             folder = os.path.realpath(download_dir)
-            saved = [(key, path, info) for key, path, info in parse_saved_lines(stdout)
-                     if os.path.isabs(path) and os.path.isfile(path)
-                     and os.path.dirname(os.path.realpath(path)) == folder]
-            new_files = 0
             album_tag = os.path.basename(os.path.normpath(download_dir)) if album_mode else ""
+            saved = []               # (key, path) of the files this link saved, in order
+            new_files = 0
             tagged_now = []          # files tagged in this run (never files the user had already)
-            for key, path, info in saved:
+
+            def handle(key, path, info):
+                """Number, tag and add the cover to one saved file, as soon as yt-dlp saved it:
+                covers appear one by one during a playlist, and songs saved before a Cancel
+                keep theirs. The folder's record and album playlist are updated each time."""
+                nonlocal new_files
                 name = os.path.basename(path)
                 what = "new"
                 if name not in existed_before:
@@ -3236,26 +3411,53 @@ class MusicDownloader:
                     except OSError as e:
                         debug(f"Warning: Could not number {path}: {e}", level="WARN")
                 tracks[key] = os.path.basename(path)
-                if what == "duplicate" or not (want_tags or want_cover) \
-                        or not path.lower().endswith(AUDIO_TAG_EXTS):
-                    continue
-                meta = song_meta(info, album_tag)
-                record["artists"][key] = meta["artist"]     # also "": marks files MDJ tagged
-                cover = None
-                if want_cover:
-                    vid = key.split(" ", 1)[1]
-                    thumb = os.path.join(thumb_dir, vid + ".jpg")
-                    square = os.path.join(thumb_dir, vid + ".cover.jpg")
-                    if make_square_cover(thumb, square):
-                        with open(square, "rb") as f:
-                            cover = f.read()
-                    else:
-                        cover = default_cover()   # no picture from the source: the MDJ logo
-                if not song_tags:                 # album folder with tags off: album name only
-                    meta = {"album": meta["album"]}
-                write_tags(path, meta if want_tags else None, cover,
-                           track=track_number_of(os.path.basename(path)) if want_tags else None)
-                tagged_now.append(path)
+                saved.append((key, path))
+                if not (what == "duplicate" or not (want_tags or want_cover)
+                        or not path.lower().endswith(AUDIO_TAG_EXTS)):
+                    meta = song_meta(info, album_tag)
+                    record["artists"][key] = meta["artist"]     # also "": marks files MDJ tagged
+                    cover = None
+                    if want_cover:
+                        vid = key.split(" ", 1)[1]
+                        thumb = os.path.join(thumb_dir, vid + ".jpg")
+                        square = os.path.join(thumb_dir, vid + ".cover.jpg")
+                        if make_square_cover(thumb, square):
+                            with open(square, "rb") as f:
+                                cover = f.read()
+                        else:
+                            cover = default_cover()   # no picture from the source: the MDJ logo
+                    if not song_tags:                 # album folder with tags off: album name only
+                        meta = {"album": meta["album"]}
+                    write_tags(path, meta if want_tags else None, cover,
+                               track=track_number_of(os.path.basename(path)) if want_tags else None)
+                    tagged_now.append(path)
+                try:
+                    save_record(download_dir, record)
+                except OSError as e:
+                    debug(f"Warning: Could not save the track record: {e}", level="WARN")
+                if album_mode:
+                    try:
+                        write_album_playlist(download_dir)
+                    except OSError as e:
+                        debug(f"Warning: Could not write the playlist: {e}", level="WARN")
+
+            for line in proc.stdout:
+                # (also after a Cancel: these files were completely saved before it)
+                for key, path, info in parse_saved_lines(line):
+                    if os.path.isabs(path) and os.path.isfile(path) \
+                            and os.path.dirname(os.path.realpath(path)) == folder:
+                        try:
+                            handle(key, path, info)
+                        except OSError as e:
+                            debug(f"Warning: Could not finish {path}: {e}", level="WARN")
+            proc.wait()
+            err_reader.join(timeout=5)
+            stderr = "".join(err_lines)
+            cancelled = not current()
+
+            # Once per link: tidy up, one album artist and the album cover. Also after a Cancel,
+            # for the songs saved until then (handled even when yt-dlp reports an error: in a
+            # playlist it skips an unavailable video, saves the others and then exits with one).
             if thumb_dir and not any(a.startswith("--write-thumbnail") or a == "--write-all-thumbnails"
                                      for a in custom):
                 # yt-dlp first writes the thumbnail next to the song and moves it to thumb_dir at
@@ -3294,6 +3496,9 @@ class MusicDownloader:
                             save_record(download_dir, record)
                 except OSError as e:
                     debug(f"Warning: Could not write the playlist or cover: {e}", level="WARN")
+
+            if cancelled:
+                return
 
             if proc.returncode != 0:
                 # Parse error and show user-friendly message instead of raw stderr
@@ -4352,44 +4557,6 @@ class MusicDownloader:
                       command=win.destroy).pack(side="right", expand=True, fill="x", padx=(5, 0))
         win.bind("<Escape>", lambda e: win.destroy())
         win.after(50, lambda: win.winfo_exists() and (win.lift(), win.focus_force()))
-
-    def show_error_dialog(self, title, message):
-        error_window = ctk.CTkToplevel(self.root)
-        error_window.title(title)
-        self.center_dialog(error_window, 450, 300)
-
-        frame = ctk.CTkFrame(error_window, corner_radius=15)
-        frame.pack(expand=True, fill="both", padx=15, pady=15)
-
-        error_title = ctk.CTkLabel(
-            frame,
-            text="Error",
-            font=ctk.CTkFont(size=20),
-            text_color="#f44336"
-        )
-        error_title.pack(pady=(15, 10))
-
-        text_frame = ctk.CTkFrame(frame, fg_color="transparent")
-        text_frame.pack(expand=True, fill="both", padx=20, pady=(0, 10))
-
-        text_area = ctk.CTkTextbox(
-            text_frame,
-            wrap="word",
-            font=ctk.CTkFont(size=12),
-            height=150
-        )
-        text_area.pack(expand=True, fill="both")
-        text_area.insert("1.0", message)
-        text_area.configure(state="disabled")
-
-        ok_btn = ctk.CTkButton(
-            frame,
-            text="OK",
-            height=40,
-            command=error_window.destroy,
-            font=ctk.CTkFont(size=14)
-        )
-        ok_btn.pack(pady=(10, 15), padx=20, fill="x")
 
 
 def resource_path(*parts):

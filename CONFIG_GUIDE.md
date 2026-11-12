@@ -182,7 +182,7 @@ App will recreate with defaults on next launch.
 
 The easiest way: open "⚙ yt-dlp Settings", Advanced tab. **Check** asks yt-dlp whether it accepts your options, and "What the app will run" shows the exact command for audio and video.
 
-When a download fails, the queue summary names the reason, and pointing at the song's ✗ shows the full message. Each failure is also written, with yt-dlp's last lines, to `~/.cache/mdj-music-downloader/errors.log`.
+When a download fails, the status line names the reason and shows a **Details** button: it opens the full message, and **Copy** copies it with the link, the app and yt-dlp versions and yt-dlp's last lines. In the queue, pointing at the song's ✗ also shows its message. Each failure is also written, with yt-dlp's last lines, to `~/.cache/mdj-music-downloader/errors.log`.
 
 For a full log, start the app in debug mode (no rebuild needed):
 

@@ -1,4 +1,11 @@
-# MDJ Music Downloader v1.1.2 - Release Notes
+# MDJ Music Downloader v1.1.3 - Release Notes
+
+## 🎶 What's improved in v1.1.3
+- **Playlists fill in as they download:** each song gets its cover, tags and track number the moment it is saved, and the album's `.m3u` playlist grows with every song.
+- **Error details one click away:** a failed download shows a short message with a teal **Details** button. It opens the whole message, with a **Copy** button for asking for help; after a queue it lists every failed song. Nothing pops up by itself.
+- **"Not a bot" check explained:** when YouTube asks to confirm you're not a bot (after many downloads in a short time), the app says so and suggests waiting or signing in.
+- **Cancel keeps what you have:** songs finished before you press Cancel keep their cover, tags and number, and the album gets its playlist and `cover.jpg`.
+- **Clearer legal notes:** a "Legal and responsible use" section in the README, and the package now includes the licenses of all the software inside it (`/usr/share/doc/mdj-music-downloader/`).
 
 ## 🖼️ What's fixed in v1.1.2
 - **Covers show in the file manager.** If the folder was open while songs downloaded, some songs could show a plain icon instead of their cover. The cover was always in the song; now the file manager shows it too.
@@ -52,7 +59,7 @@
 ### v1.0.1
 - "Support Development" button now opens the new Ko-fi page: https://ko-fi.com/mdj_musicdl
 
-**Install:** download `mdj-music-downloader_1.1.2_amd64.deb` below, then run `sudo apt install ./mdj-music-downloader_1.1.2_amd64.deb`
+**Install:** download `mdj-music-downloader_1.1.3_amd64.deb` below, then run `sudo apt install ./mdj-music-downloader_1.1.3_amd64.deb`
 
 ---
 
@@ -124,9 +131,9 @@ A user-friendly application for downloading music and videos from YouTube and 10
 ## 📦 Installation
 
 ### Quick Install (Recommended)
-Download `mdj-music-downloader_1.1.2_amd64.deb` from the Releases page, then:
+Download `mdj-music-downloader_1.1.3_amd64.deb` from the Releases page, then:
 ```bash
-sudo apt install ./mdj-music-downloader_1.1.2_amd64.deb
+sudo apt install ./mdj-music-downloader_1.1.3_amd64.deb
 ```
 
 ### From Source
@@ -243,6 +250,11 @@ MDJ Music Downloader's source code is licensed under the MIT License. The `.deb`
 ---
 
 ## 📝 Changelog
+
+### v1.1.3 (2026-11-12)
+- 🎶 Playlists: covers, tags and numbers added song by song; Cancel keeps finished songs complete
+- 🧾 Short error messages with a Details button (full message + Copy); clear message for YouTube's "not a bot" check
+- ⚖️ Legal and responsible use section; license notices in the package
 
 ### v1.1.2 (2026-11-12)
 - 🖼️ Covers show in the file manager even when the folder was open during the download
