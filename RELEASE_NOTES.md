@@ -1,7 +1,7 @@
 # MDJ Music Downloader v1.1.0 - Release Notes
 
 ## 🆕 What's new in v1.1.0
-- **Flatpak, ready for Flathub:** yt-dlp, ffmpeg and Node.js are included, so nothing else has to be installed.
+- **Flatpak you can build yourself** (see [flatpak/README.md](flatpak/README.md)): yt-dlp, ffmpeg and Node.js are included, so nothing else has to be installed.
 - **New yt-dlp Settings window.** Basic tab: audio format (mp3, m4a, opus, flac, wav) and quality, video quality (up to 4K), cover art and tags. Advanced tab: any yt-dlp option, with step-by-step help, a **Check** button and a live preview of the exact command. It opens much faster, and instantly after the first time.
 - **Cover art and tags for music players, phones and car stereos.** Songs get a square cover and title, artist and year tags; album songs also get the album name and track number. Album folders get a `cover.jpg`, and albums with different artists are marked "Various Artists".
 - **Track numbering continues** in an existing album folder (`01`, `02` → `03`) instead of starting again at `01`.
@@ -235,7 +235,7 @@ This application is licensed under the MIT License.
 ## 📝 Changelog
 
 ### v1.1.0 (2026-11-11)
-- 📦 Flatpak for Flathub
+- 📦 Flatpak build recipe (build it yourself)
 - ⚙️ New yt-dlp Settings window (Basic and Advanced tabs, Check, command preview)
 - 🖼️ Cover art and tags; album `cover.jpg`; "Various Artists" albums
 - 🔢 Numbering continues in existing albums; numbered queue

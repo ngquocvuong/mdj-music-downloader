@@ -50,6 +50,9 @@ Uninstall: `sudo apt remove mdj-music-downloader`
 ### From Source
 See [INSTALL.md](INSTALL.md).
 
+### Flatpak (build it yourself)
+MDJ is not on Flathub. If you prefer a Flatpak, with yt-dlp, ffmpeg and Node.js included, see [flatpak/README.md](flatpak/README.md).
+
 ### Requirements
 - 64-bit Linux (Ubuntu 22.04+, Linux Mint 21+, Debian 12+, Pop!_OS 22.04+, or equivalent – glibc 2.35 or newer)
 - ffmpeg (installed automatically by the .deb package)

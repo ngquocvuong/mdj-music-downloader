@@ -125,7 +125,7 @@ modules:
       - install -Dm644 icons/mdj-music-downloader.svg /app/share/icons/hicolor/scalable/apps/${FLATPAK_ID}.svg
       - for s in 32 48 64 128 256 512; do install -Dm644 icons/mdj-music-downloader-$s.png /app/share/icons/hicolor/${s}x${s}/apps/${FLATPAK_ID}.png; done
     sources:
-      # For local test builds. For Flathub, replace with the release tag:
+      # Builds from this checkout. To build a released version instead, use its tag:
       #   - type: git
       #     url: https://github.com/ngquocvuong/mdj-music-downloader.git
       #     tag: v1.1.0

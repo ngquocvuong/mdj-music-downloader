@@ -59,9 +59,9 @@ if DEBUG:
 # App version
 APP_VERSION = "1.1.0"
 
-# Running inside a Flatpak sandbox (e.g. installed from Flathub)? Flatpak creates this file.
-# There, yt-dlp and ffmpeg are bundled in /app/bin and updated with the Flatpak itself,
-# so the in-app yt-dlp updater is hidden (Flathub apps must not download and run code).
+# Running inside a Flatpak sandbox (see flatpak/README.md)? Flatpak creates this file.
+# There, yt-dlp and ffmpeg are bundled in /app/bin (read-only) and updated with the Flatpak
+# itself, so the in-app yt-dlp updater is hidden.
 IS_FLATPAK = os.path.exists("/.flatpak-info")
 
 # Per-user yt-dlp copy, used when the user can't (or doesn't want to) update the
@@ -1857,7 +1857,7 @@ class MusicDownloader:
                     error_lower = str(msg_data).lower()
                     update_hint = ""
                     if any(word in error_lower for word in ["403", "forbidden", "old", "update", "version"]):
-                        update_hint = (" → Check for app updates in your Software Manager" if IS_FLATPAK
+                        update_hint = (" → Rebuild the Flatpak with a newer yt-dlp (see flatpak/README.md)" if IS_FLATPAK
                                        else " → Try updating: pip3 install -U yt-dlp")
                     self.status_label.configure(text=f"Error: {msg_data}{update_hint}", text_color="#f44336")
                     self._keep_status = True

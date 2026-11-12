@@ -88,7 +88,7 @@
   <releases>
     <release version="1.1.0" date="2026-11-11">
       <description>
-        <p>First release on Flathub.</p>
+        <p>First Flatpak release.</p>
         <p>A new yt-dlp Settings window with everyday choices (audio format, video quality, cover art) and a checked Advanced tab. Track numbering now continues correctly in existing album folders, songs you already have are not downloaded again, and a link to one song in a playlist downloads only that song.</p>
         <p>Songs get cover art and tags that music players, phones and car stereos understand, and album folders get a cover picture. The queue is numbered, and Export and Import remember the album name.</p>
       </description>

@@ -29,7 +29,7 @@ sudo ./INSTALL.sh       # Or install directly without a package
 
 ## Flatpak
 
-A Flatpak (with yt-dlp, ffmpeg and Node.js included) is being prepared for Flathub. To build and test it yourself, see [flatpak/README.md](flatpak/README.md).
+MDJ is not on Flathub; the `.deb` above is the main way to install it. If you prefer a Flatpak (with yt-dlp, ffmpeg and Node.js included), you can build it yourself: see [flatpak/README.md](flatpak/README.md).
 
 ## Uninstall
 

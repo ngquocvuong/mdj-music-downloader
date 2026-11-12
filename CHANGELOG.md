@@ -7,7 +7,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 ## [1.1.0] - 2026-11-11
 
 ### Added
-- **Flatpak package**, ready for Flathub (app ID `io.github.ngquocvuong.mdj-music-downloader`). It includes yt-dlp, ffmpeg and Node.js (which yt-dlp needs for YouTube), so nothing else has to be installed. In the Flatpak, yt-dlp is updated with the app, so "Update yt-dlp" is hidden.
+- **Flatpak package** you can build yourself (see `flatpak/README.md`; app ID `io.github.ngquocvuong.mdj-music-downloader`). It includes yt-dlp, ffmpeg and Node.js (which yt-dlp needs for YouTube), so nothing else has to be installed. In the Flatpak, yt-dlp is updated with the app, so "Update yt-dlp" is hidden.
 - **New yt-dlp Settings window** with two tabs:
   - **Basic:** choose the audio format (mp3, m4a, opus, flac, wav) and quality, the video quality (best, 4K, 1440p, 1080p, 720p, 480p), add cover art and title/artist tags to files, and use your browser's login (cookies) for age-restricted videos (not in the Flatpak).
   - **Advanced:** custom yt-dlp options with step-by-step help when the box is empty, a **Check** button that asks yt-dlp whether it accepts them, links to the yt-dlp option list and format guide, and a live preview of the full command the app will run.
